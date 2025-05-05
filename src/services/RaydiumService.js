@@ -1,4 +1,7 @@
-import { PublicKey, Transaction, VersionedTransaction, Connection } from '@solana/web3.js';
+import { PublicKey, Transaction, VersionedTransaction, Connection, Keypair } from '@solana/web3.js';
+import { Token, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { Liquidity, TokenAmount, Token as RaydiumToken } from '@raydium-io/raydium-sdk';
+import { BN } from '@project-serum/anchor';
 
 /**
  * RaydiumService
@@ -8,168 +11,300 @@ import { PublicKey, Transaction, VersionedTransaction, Connection } from '@solan
  */
 class RaydiumService {
     constructor() {
-        // Base endpoint for Raydium's trade compute API
-        this.baseUrl = 'https://transaction-v1.raydium.io/compute';
-        // Solana RPC endpoint (consider using a dedicated provider like QuickNode for production)
+        // Solana RPC endpoint
         this.connection = new Connection('https://api.mainnet-beta.solana.com');
-        // Jupiter token list API
-        this.tokenListUrl = 'https://token.jup.ag/all';
         
-        // Initialize token map
-        this.tokenMap = new Map();
-        this.initializeTokenMap();
+        // Raydium program IDs
+        this.AMM_PROGRAM_ID = new PublicKey('675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8');
+        this.AMM_AUTHORITY = new PublicKey('5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1');
+        
+        // Common token addresses
+        this.tokenAddresses = {
+            'SOL': 'So11111111111111111111111111111111111111112',
+            'USDC': 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+            'USDT': 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+            'BONK': 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+            'TRUMP': '5v6tZ1SiAi7G8Qg4rBF1gX1KqX3FzWYQJvXJqH6XqXqX'
+        };
 
-        this.commonTokens = {
-            'SOL': {
-                address: 'So11111111111111111111111111111111111111112',
-                decimals: 9,
-                symbol: 'SOL',
-                name: 'Solana'
-            },
-            'USDC': {
-                address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-                decimals: 6,
-                symbol: 'USDC',
-                name: 'USD Coin'
-            },
-            'USDT': {
-                address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
-                decimals: 6,
-                symbol: 'USDT',
-                name: 'Tether USD'
-            },
-            'BONK': {
-                address: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-                decimals: 5,
-                symbol: 'BONK',
-                name: 'Bonk'
-            },
-            'TRUMP': {
-                address: '5v6tZ1SiAi7G8Qg4rBF1gX1KqX3FzWYQJvXJqH6XqXqX',
-                decimals: 9,
-                symbol: 'TRUMP',    
-                name: 'Trump'
-            }
+        // Token decimals
+        this.tokenDecimals = {
+            'SOL': 9,
+            'USDC': 6,
+            'USDT': 6,
+            'BONK': 5,
+            'TRUMP': 9
         };
     }
 
-    async initializeTokenMap() {
-        try {
-            const response = await fetch(this.tokenListUrl);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch token list: ${response.statusText}`);
-            }
-
-            const tokens = await response.json();
-            
-            // Create a map of token symbols to their information
-            tokens.forEach(token => {
-                this.tokenMap.set(token.symbol.toUpperCase(), {
-                    address: token.address,
-                    decimals: token.decimals,
-                    symbol: token.symbol,
-                    name: token.name
-                });
-            });
-
-            console.log('[Raydium] Token map initialized with', this.tokenMap.size, 'tokens');
-        } catch (error) {
-            console.error('[Raydium] Error initializing token map:', error);
-            // Fallback to common tokens if API fails
-            this.tokenMap = new Map(Object.entries(this.commonTokens));
+    async getTokenBySymbol(symbol) {
+        const address = this.tokenAddresses[symbol.toUpperCase()];
+        if (!address) {
+            throw new Error(`Token "${symbol}" not found in supported list`);
         }
+        return {
+            address,
+            decimals: this.tokenDecimals[symbol.toUpperCase()],
+            symbol: symbol.toUpperCase()
+        };
     }
 
-    async getTokenBySymbol(symbol) {
-        // Wait for token map to be initialized
-        if (this.tokenMap.size === 0) {
-            await this.initializeTokenMap();
-        }
+    async findPool(inputToken, outputToken) {
+        try {
+            console.log('Finding pool for tokens:', {
+                inputToken: {
+                    symbol: inputToken.symbol,
+                    address: inputToken.address
+                },
+                outputToken: {
+                    symbol: outputToken.symbol,
+                    address: outputToken.address
+                }
+            });
 
-        const tokenInfo = this.tokenMap.get(symbol.toUpperCase());
-        if (!tokenInfo) {
-            throw new Error(`Token "${symbol}" not found in token list`);
+            // Get all Raydium pools
+            const pools = await Liquidity.fetchAllPoolKeys(this.connection);
+            console.log('Total pools found:', pools.length);
+
+            if (!pools || pools.length === 0) {
+                throw new Error('No liquidity pools found');
+            }
+
+            // Log first few pools for debugging
+            console.log('Sample pools:', pools.slice(0, 3).map(pool => ({
+                baseMint: pool.baseMint.toString(),
+                quoteMint: pool.quoteMint.toString()
+            })));
+
+            // Find pool that matches our token pair
+            const pool = pools.find(pool => {
+                try {
+                    const baseMint = pool.baseMint.toString();
+                    const quoteMint = pool.quoteMint.toString();
+                    
+                    const isMatch = (
+                        (baseMint === inputToken.address && quoteMint === outputToken.address) ||
+                        (baseMint === outputToken.address && quoteMint === inputToken.address)
+                    );
+
+                    if (isMatch) {
+                        console.log('Found matching pool:', {
+                            baseMint,
+                            quoteMint,
+                            inputTokenAddress: inputToken.address,
+                            outputTokenAddress: outputToken.address
+                        });
+                    }
+
+                    return isMatch;
+                } catch (error) {
+                    console.error('Error checking pool:', error);
+                    return false;
+                }
+            });
+
+            if (!pool) {
+                console.log('No matching pool found. Available pools:', pools.map(p => ({
+                    baseMint: p.baseMint.toString(),
+                    quoteMint: p.quoteMint.toString()
+                })));
+                throw new Error(`No liquidity pool found for ${inputToken.symbol}/${outputToken.symbol} pair`);
+            }
+
+            console.log('Found matching pool:', {
+                baseMint: pool.baseMint.toString(),
+                quoteMint: pool.quoteMint.toString()
+            });
+
+            return pool;
+        } catch (error) {
+            console.error('Error finding pool:', error);
+            throw new Error(`Failed to find liquidity pool: ${error.message}`);
         }
-        return tokenInfo;
     }
 
     async swap(
         inputTokenSymbol,
         outputTokenSymbol,
-        amountInTokenUnits,
-        swapMode = 'ExactIn',
-        slippageBps = 50,
-        computeUnitPriceMicroLamports = 100000
+        amount,
+        amountType = 'input',
+        slippageBps = 50
     ) {
         try {
-            // Get token information from the token map
-            const inputTokenInfo = await this.getTokenBySymbol(inputTokenSymbol);
-            const outputTokenInfo = await this.getTokenBySymbol(outputTokenSymbol);
+            console.log('Swap request details:', {
+                inputTokenSymbol,
+                outputTokenSymbol,
+                amount,
+                amountType,
+                slippageBps
+            });
 
-            if (!inputTokenInfo || !outputTokenInfo) {
+            // Get token information
+            const inputToken = await this.getTokenBySymbol(inputTokenSymbol);
+            const outputToken = await this.getTokenBySymbol(outputTokenSymbol);
+
+            console.log('Token information:', {
+                inputToken,
+                outputToken
+            });
+
+            if (!inputToken || !outputToken) {
                 throw new Error('Token information not found');
             }
 
-            // Convert to smallest units (integer)
-            const amountRaw = Math.floor(
-                amountInTokenUnits * Math.pow(10, swapMode === 'ExactIn' ? inputTokenInfo.decimals : outputTokenInfo.decimals)
-            );
+            // Find the appropriate liquidity pool
+            const pool = await this.findPool(inputToken, outputToken);
 
-            const endpoint =
-                swapMode === 'ExactIn' ? `${this.baseUrl}/swap-base-in` : `${this.baseUrl}/swap-base-out`;
-
-            const url = new URL(endpoint);
-            url.searchParams.append('inputMint', inputTokenInfo.address);
-            url.searchParams.append('outputMint', outputTokenInfo.address);
-            url.searchParams.append('amount', amountRaw.toString());
-            url.searchParams.append('slippageBps', slippageBps.toString());
-            url.searchParams.append('txVersion', 'V0'); // Use versioned transactions
-            url.searchParams.append('computeUnitPriceMicroLamports', computeUnitPriceMicroLamports.toString());
-
-            console.log('[Raydium] Swap URL:', url.toString());
-
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Raydium API error ${response.status}: ${errorText}`);
-            }
-
-            const data = await response.json();
-            console.log('[Raydium] Swap response:', data);
-
-            if (!data.transaction) {
-                throw new Error('No transaction data received from Raydium API');
-            }
-
-            // Get the wallet from the global window object
+            // Get the wallet
             const wallet = window.solana || window.solflare;
             if (!wallet) {
-                throw new Error('No compatible Solana wallet detected. Please install a wallet like Phantom or Solflare.');
+                throw new Error('No compatible Solana wallet detected');
             }
 
-            // Connect to wallet if not already connected
+            // Connect wallet if not already connected
             if (!wallet.isConnected) {
                 await wallet.connect();
             }
 
-            // Create transaction from the swap data
-            const transactionData = Buffer.from(data.transaction, 'base64');
-            if (!transactionData || transactionData.length === 0) {
-                throw new Error('Invalid transaction data received from Raydium API');
+            console.log('Wallet connected:', {
+                publicKey: wallet.publicKey.toString()
+            });
+
+            // Create token objects for Raydium SDK
+            const inputTokenObj = new RaydiumToken(
+                new PublicKey(inputToken.address),
+                inputToken.decimals
+            );
+            const outputTokenObj = new RaydiumToken(
+                new PublicKey(outputToken.address),
+                outputToken.decimals
+            );
+
+            // Get pool info
+            const poolInfo = await Liquidity.fetchInfo({
+                connection: this.connection,
+                poolKeys: pool
+            });
+
+            console.log('Pool info:', {
+                baseMint: pool.baseMint.toString(),
+                quoteMint: pool.quoteMint.toString(),
+                baseDecimals: poolInfo.baseDecimals,
+                quoteDecimals: poolInfo.quoteDecimals
+            });
+
+            let swapInstruction;
+            if (amountType === 'input') {
+                // Convert input amount to raw units
+                const amountRaw = new BN(
+                    Math.floor(amount * Math.pow(10, inputToken.decimals))
+                );
+
+                console.log('Input amount calculation:', {
+                    amount,
+                    decimals: inputToken.decimals,
+                    amountRaw: amountRaw.toString()
+                });
+
+                // Create token amount objects
+                const inputAmount = new TokenAmount(inputTokenObj, amountRaw);
+                
+                // Calculate output amount with slippage
+                const outputAmount = await Liquidity.computeOutputAmount({
+                    poolKeys: pool,
+                    poolInfo,
+                    amountIn: inputAmount,
+                    currencyOut: outputTokenObj,
+                    slippage: new BN(slippageBps)
+                });
+
+                console.log('Output amount calculation:', {
+                    minAmountOut: outputAmount.minAmountOut.raw.toString(),
+                    amountOut: outputAmount.amountOut.raw.toString()
+                });
+
+                // Create swap instruction for exact input
+                swapInstruction = await Liquidity.makeSwapInstruction({
+                    poolKeys: pool,
+                    userKeys: {
+                        tokenAccountIn: await Token.getAssociatedTokenAddress(
+                            new PublicKey(inputToken.address),
+                            wallet.publicKey
+                        ),
+                        tokenAccountOut: await Token.getAssociatedTokenAddress(
+                            new PublicKey(outputToken.address),
+                            wallet.publicKey
+                        ),
+                        owner: wallet.publicKey
+                    },
+                    amountIn: inputAmount.raw,
+                    minAmountOut: outputAmount.minAmountOut.raw
+                });
+            } else {
+                // Convert output amount to raw units
+                const amountRaw = new BN(
+                    Math.floor(amount * Math.pow(10, outputToken.decimals))
+                );
+
+                console.log('Output amount calculation:', {
+                    amount,
+                    decimals: outputToken.decimals,
+                    amountRaw: amountRaw.toString()
+                });
+
+                // Create token amount objects
+                const outputAmount = new TokenAmount(outputTokenObj, amountRaw);
+                
+                // Calculate input amount with slippage
+                const inputAmount = await Liquidity.computeInputAmount({
+                    poolKeys: pool,
+                    poolInfo,
+                    amountOut: outputAmount,
+                    currencyIn: inputTokenObj,
+                    slippage: new BN(slippageBps)
+                });
+
+                console.log('Input amount calculation:', {
+                    maxAmountIn: inputAmount.maxAmountIn.raw.toString(),
+                    amountIn: inputAmount.amountIn.raw.toString()
+                });
+
+                // Create swap instruction for exact output
+                swapInstruction = await Liquidity.makeSwapInstruction({
+                    poolKeys: pool,
+                    userKeys: {
+                        tokenAccountIn: await Token.getAssociatedTokenAddress(
+                            new PublicKey(inputToken.address),
+                            wallet.publicKey
+                        ),
+                        tokenAccountOut: await Token.getAssociatedTokenAddress(
+                            new PublicKey(outputToken.address),
+                            wallet.publicKey
+                        ),
+                        owner: wallet.publicKey
+                    },
+                    maxAmountIn: inputAmount.maxAmountIn.raw,
+                    amountOut: outputAmount.raw
+                });
             }
 
-            // Handle both legacy and versioned transactions
-            const transaction = data.txVersion === 'V0' ? VersionedTransaction.deserialize(transactionData) : Transaction.from(transactionData);
+            // Create and send transaction
+            const transaction = new Transaction().add(swapInstruction);
+            const { blockhash } = await this.connection.getLatestBlockhash();
+            transaction.recentBlockhash = blockhash;
+            transaction.feePayer = wallet.publicKey;
 
-            // Sign and send the transaction
+            console.log('Transaction created:', {
+                blockhash,
+                feePayer: wallet.publicKey.toString()
+            });
+
             const signedTx = await wallet.signTransaction(transaction);
             const signature = await this.connection.sendRawTransaction(signedTx.serialize());
+
+            console.log('Transaction sent:', {
+                signature
+            });
 
             // Wait for confirmation
             const confirmation = await this.connection.confirmTransaction(signature, { commitment: 'confirmed' });
@@ -177,22 +312,20 @@ class RaydiumService {
                 throw new Error(`Transaction failed: ${confirmation.value.err}`);
             }
 
-            // Calculate amounts in token units
-            const inAmount = amountRaw / Math.pow(10, inputTokenInfo.decimals);
-            const outAmountRaw = BigInt(data.outAmount ?? data.data?.outAmount ?? 0);
-            const outAmount = Number(outAmountRaw) / Math.pow(10, outputTokenInfo.decimals);
+            console.log('Transaction confirmed');
 
             return {
                 txId: signature,
                 status: 'success',
                 message: 'Swap executed successfully',
                 details: {
-                    fromToken: inputTokenInfo.symbol,
-                    toToken: outputTokenInfo.symbol,
-                    inputAmount: inAmount,
-                    outputAmount: outAmount,
-                    price: outAmount / inAmount,
-                    priceImpact: data.priceImpact,
+                    fromToken: inputToken.symbol,
+                    toToken: outputToken.symbol,
+                    inputAmount: amountType === 'input' ? amount : Number(inputAmount.maxAmountIn.raw) / Math.pow(10, inputToken.decimals),
+                    outputAmount: amountType === 'output' ? amount : Number(outputAmount.minAmountOut.raw) / Math.pow(10, outputToken.decimals),
+                    price: amountType === 'input' 
+                        ? Number(outputAmount.minAmountOut.raw) / Number(inputAmount.raw) 
+                        : Number(inputAmount.maxAmountIn.raw) / Number(outputAmount.raw),
                     explorerUrl: `https://solscan.io/tx/${signature}`
                 }
             };
