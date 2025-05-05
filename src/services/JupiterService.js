@@ -370,4 +370,5 @@ class RaydiumService {
     }
 }
 
-export default new RaydiumService();
+const jupiterService = new RaydiumService();
+export default jupiterService;
