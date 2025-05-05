@@ -1,5 +1,5 @@
-// import jupiterService from './JupiterService';
-import raydiumService from './RaydiumService';
+import jupiterService from './JupiterService';
+// import raydiumService from './RaydiumService';
 
 class AgentService {
   constructor() {
@@ -35,8 +35,8 @@ class AgentService {
         name: 'Bonk'
       },
       'TRUMP': {
-        address: '5v6tZ1SiAi7G8Qg4rBF1gX1KqX3FzWYQJvXJqH6XqXqX',
-        decimals: 9,
+        address: '6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN',
+        decimals: 6,
         symbol: 'TRUMP',    
         name: 'Trump'
       }
@@ -45,6 +45,43 @@ class AgentService {
 
   async getTokenSymbol(userInput) {
     try {
+      // Normalize input to uppercase for comparison
+      const normalizedInput = userInput.toUpperCase();
+      
+      // Direct mapping for known tokens to avoid API calls
+      const directMappings = {
+        // SOL and variations
+        'SOL': 'SOL',
+        'SOLANA': 'SOL',
+        
+        // USDC and variations
+        'USDC': 'USDC',
+        'USD COIN': 'USDC',
+        'USD': 'USDC',
+        'DOLLAR': 'USDC',
+        
+        // USDT and variations
+        'USDT': 'USDT',
+        'TETHER': 'USDT',
+        
+        // BONK and variations
+        'BONK': 'BONK',
+        
+        // TRUMP and variations
+        'TRUMP': 'TRUMP'
+      };
+      
+      // Check if we have a direct mapping
+      if (directMappings[normalizedInput]) {
+        return directMappings[normalizedInput];
+      }
+      
+      // Check if the input exactly matches a key in commonTokens
+      if (this.commonTokens[normalizedInput]) {
+        return normalizedInput;
+      }
+
+      // If not found in direct mappings, use the LLM to identify the token
       const prompt = `
       You are a helpful assistant that understands cryptocurrency tokens and their variations.
       
@@ -173,15 +210,67 @@ class AgentService {
           const fromTokenSymbol = await this.getTokenSymbol(fromToken);
           const toTokenSymbol = await this.getTokenSymbol(intentData.toToken);
 
-          console.log('Token symbols:', { fromTokenSymbol, toTokenSymbol });
+          console.log('Token symbols extracted:', { fromTokenSymbol, toTokenSymbol });
+          
+          // Check if tokens are in our supported list
+          if (!this.commonTokens[fromTokenSymbol]) {
+            return {
+              type: 'error',
+              message: `Sorry, the token '${fromTokenSymbol}' is not supported for trading at this time.`
+            };
+          }
+
+          if (!this.commonTokens[toTokenSymbol]) {
+            return {
+              type: 'error',
+              message: `Sorry, the token '${toTokenSymbol}' is not supported for trading at this time.`
+            };
+          }
+          
+          // Check if we're trying to swap the same token
+          if (fromTokenSymbol === toTokenSymbol) {
+            return {
+              type: 'error',
+              message: `Cannot swap ${fromTokenSymbol} to itself. Please choose different tokens.`
+            };
+          }
+
+          // Validate amount is a positive number
+          if (!intentData.amount || intentData.amount <= 0) {
+            return {
+              type: 'error',
+              message: 'Please specify a valid positive amount to swap.'
+            };
+          }
+          
+          console.log('Initiating swap with tokens:', { 
+            from: {
+              symbol: fromTokenSymbol,
+              address: this.commonTokens[fromTokenSymbol].address
+            },
+            to: {
+              symbol: toTokenSymbol, 
+              address: this.commonTokens[toTokenSymbol].address
+            },
+            amount: intentData.amount
+          });
 
           // Execute the swap directly
-          const result = await raydiumService.swap(
+          const result = await jupiterService.swap(
             fromTokenSymbol,
             toTokenSymbol,
             intentData.amount,
             'ExactIn'
           );
+
+          // Check if this was a simulated swap (demo mode)
+          if (result.details.demoMode) {
+            return {
+              type: 'success',
+              message: `DEMO MODE: Swap simulated! You would swap ${result.details.inputAmount} ${result.details.fromToken} for approximately ${result.details.outputAmount} ${result.details.toToken}. (No actual transaction was executed)`,
+              transaction: result
+            };
+          }
 
           return {
             type: 'success',
@@ -190,9 +279,16 @@ class AgentService {
           };
         } catch (error) {
           console.error('Error processing swap:', error);
+          
+          // Provide a more user-friendly error message based on the error
+          let errorMessage = `Failed to execute swap: ${error.message}`;
+          
+          // Reset the conversation context on error so user can try again
+          this.conversationContext.delete(walletAddress);
+          
           return {
             type: 'error',
-            message: `Failed to execute swap: ${error.message}`
+            message: errorMessage
           };
         }
       } else {

@@ -1,212 +1,293 @@
-// import { Connection, PublicKey } from '@solana/web3.js';
+import { PublicKey, Transaction, VersionedTransaction, Connection } from '@solana/web3.js';
 
-// class JupiterService {
-//   constructor() {
-//     this.connection = new Connection('https://api.mainnet-beta.solana.com');
-//     this.tokenMap = new Map();
-//     this.SOL_ADDRESS = new PublicKey('So11111111111111111111111111111111111111112');
-    
-//     // Known tokens with their addresses
-//     this.knownTokens = {
-//       'SOL': {
-//         address: this.SOL_ADDRESS,
-//         decimals: 9,
-//         symbol: 'SOL'
-//       },
-//       'USDC': {
-//         address: new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),
-//         decimals: 6,
-//         symbol: 'USDC'
-//       },
-//       'USDT': {
-//         address: new PublicKey('Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'),
-//         decimals: 6,
-//         symbol: 'USDT'
-//       },
-//       'BONK': {
-//         address: new PublicKey('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263'),
-//         decimals: 5,
-//         symbol: 'BONK'
-//       },
-//       'TRUMP': {
-//         address: new PublicKey('6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN'),
-//         decimals: 6,
-//         symbol: 'TRUMP'
-//       }
-//     };
-//   }
+/**
+ * RaydiumService (now using Jupiter Aggregator)
+ * --------------
+ * Wrapper around Jupiter Aggregator API to execute real swaps on Solana.
+ * Docs: https://docs.jup.ag/
+ */
+class RaydiumService {
+    constructor() {
+        // Base endpoint for Jupiter Aggregator API
+        this.baseUrl = 'https://quote-api.jup.ag/v6';
+        // Jupiter token list API
+        this.tokenListUrl = 'https://token.jup.ag/all';
+        
+        // Initialize token map
+        this.tokenMap = new Map();
+        this.initializeTokenMap();
 
-//   async initialize() {
-//     try {
-//       console.log('Initializing token map...');
-//       const response = await fetch('https://lite-api.jup.ag/tokens');
-//       const tokens = await response.json();
-//       console.log('Fetched tokens:', tokens.length);
-      
-//       // Store tokens by both address and symbol
-//       tokens.forEach(token => {
-//         const tokenInfo = {
-//           address: new PublicKey(token.address),
-//           decimals: token.decimals,
-//           symbol: token.symbol
-//         };
-//         this.tokenMap.set(token.address, tokenInfo);
-//         this.tokenMap.set(token.symbol, tokenInfo);
-//       });
+        this.commonTokens = {
+            'SOL': {
+                address: 'So11111111111111111111111111111111111111112',
+                decimals: 9,
+                symbol: 'SOL',
+                name: 'Solana'
+            },
+            'USDC': {
+                address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+                decimals: 6,
+                symbol: 'USDC',
+                name: 'USD Coin'
+            },
+            'USDT': {
+                address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+                decimals: 6,
+                symbol: 'USDT',
+                name: 'Tether USD'
+            },
+            'BONK': {
+                address: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+                decimals: 5,
+                symbol: 'BONK',
+                name: 'Bonk'
+            },
+            'TRUMP': {
+                address: '6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN',
+                decimals: 6,
+                symbol: 'TRUMP',    
+                name: 'Trump'
+            }
+        };
+    }
 
-//       // Add known tokens to the map
-//       Object.entries(this.knownTokens).forEach(([symbol, token]) => {
-//         this.tokenMap.set(token.address.toString(), token);
-//         this.tokenMap.set(symbol, token);
-//       });
-      
-//       console.log('Token map initialized with known tokens:', Object.keys(this.knownTokens));
-//     } catch (error) {
-//       console.error('Error initializing token map:', error);
-//       throw new Error('Failed to initialize token map');
-//     }
-//   }
+    async initializeTokenMap() {
+        try {
+            const response = await fetch(this.tokenListUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch token list: ${response.statusText}`);
+            }
 
-//   async getTokenBySymbol(symbol) {
-//     if (this.tokenMap.size === 0) {
-//       await this.initialize();
-//     }
+            const tokens = await response.json();
+            
+            // First, add our common tokens to ensure they're available
+            Object.entries(this.commonTokens).forEach(([symbol, info]) => {
+                this.tokenMap.set(symbol, info);
+            });
+            
+            // Then add tokens from the API
+            tokens.forEach(token => {
+                this.tokenMap.set(token.symbol.toUpperCase(), {
+                    address: token.address,
+                    decimals: token.decimals,
+                    symbol: token.symbol,
+                    name: token.name
+                });
+            });
 
-//     const upperSymbol = symbol.toUpperCase();
-//     console.log('Looking up token by symbol:', upperSymbol);
-    
-//     // First check known tokens
-//     if (this.knownTokens[upperSymbol]) {
-//       console.log('Found token in known tokens:', this.knownTokens[upperSymbol]);
-//       return this.knownTokens[upperSymbol];
-//     }
+            console.log('[Jupiter] Token map initialized with', this.tokenMap.size, 'tokens');
+        } catch (error) {
+            console.error('[Jupiter] Error initializing token map:', error);
+            // Fallback to common tokens if API fails
+            Object.entries(this.commonTokens).forEach(([symbol, info]) => {
+                this.tokenMap.set(symbol, info);
+            });
+            console.log('[Jupiter] Fallback to common tokens:', this.tokenMap.size, 'tokens');
+        }
+    }
 
-//     // Then check the token map
-//     const token = this.tokenMap.get(upperSymbol);
-//     if (!token) {
-//       console.log('Available tokens:', Array.from(this.tokenMap.keys()));
-//       throw new Error(`Token ${symbol} not found`);
-//     }
-    
-//     console.log('Found token in map:', token);
-//     return token;
-//   }
+    async getTokenBySymbol(symbol) {
+        const normalizedSymbol = symbol.toUpperCase();
+        
+        // Wait for token map to be initialized
+        if (this.tokenMap.size === 0) {
+            await this.initializeTokenMap();
+        }
 
-//   async getTokenByAddress(address) {
-//     if (this.tokenMap.size === 0) {
-//       await this.initialize();
-//     }
+        // First try to get from common tokens which we know are correct
+        if (this.commonTokens[normalizedSymbol]) {
+            return this.commonTokens[normalizedSymbol];
+        }
+        
+        // Then try the token map
+        const tokenInfo = this.tokenMap.get(normalizedSymbol);
+        if (!tokenInfo) {
+            throw new Error(`Token "${symbol}" not found in token list`);
+        }
+        return tokenInfo;
+    }
 
-//     console.log('Looking up token by address:', address);
-//     const token = this.tokenMap.get(address);
-//     if (!token) {
-//       throw new Error(`Token with address ${address} not found`);
-//     }
-    
-//     console.log('Found token:', token);
-//     return token;
-//   }
+    async swap(
+        inputTokenSymbol,
+        outputTokenSymbol,
+        amountInTokenUnits,
+        swapMode = 'ExactIn',
+        slippageBps = 100,
+        computeUnitPriceMicroLamports = 100000
+    ) {
+        try {
+            // Get the connected wallet
+            const wallet = window.solana || window.solflare;
+            if (!wallet) {
+                throw new Error('No compatible Solana wallet detected. Please install a wallet like Phantom or Solflare.');
+            }
 
-//   async getQuote(inputTokenSymbol, outputTokenSymbol, amountInTokenUnits, swapMode = 'ExactIn') {
-//     try {
-//       // Ensure token symbols are strings
-//       const inputSymbol = String(inputTokenSymbol);
-//       const outputSymbol = String(outputTokenSymbol);
-      
-//       console.log('Getting quote for:', {
-//         inputTokenSymbol: inputSymbol,
-//         outputTokenSymbol: outputSymbol,
-//         amountInTokenUnits,
-//         swapMode
-//       });
+            // Connect to wallet if not already connected
+            if (!wallet.isConnected) {
+                await wallet.connect();
+            }
 
-//       const inputToken = await this.getTokenBySymbol(inputSymbol);
-//       const outputToken = await this.getTokenBySymbol(outputSymbol);
-      
-//       console.log('Token info:', {
-//         inputToken,
-//         outputToken
-//       });
+            // Get the user's public key
+            const userPublicKey = wallet.publicKey.toString();
+            console.log('[Jupiter] User wallet address:', userPublicKey);
 
-//       let amountInSmallestUnits;
-//       if (swapMode === 'ExactIn') {
-//         amountInSmallestUnits = Math.floor(amountInTokenUnits * Math.pow(10, inputToken.decimals));
-//       } else { // ExactOut
-//         amountInSmallestUnits = Math.floor(amountInTokenUnits * Math.pow(10, outputToken.decimals));
-//       }
-      
-//       console.log('Requesting quote with params:', {
-//         inputMint: inputToken.address.toString(),
-//         outputMint: outputToken.address.toString(),
-//         amount: amountInSmallestUnits,
-//         swapMode
-//       });
+            // Normalize the token symbols to uppercase
+            const normalizedInputSymbol = inputTokenSymbol.toUpperCase();
+            const normalizedOutputSymbol = outputTokenSymbol.toUpperCase();
+            
+            // First check if these are common tokens - prioritize these over the token map
+            let inputTokenInfo, outputTokenInfo;
+            
+            if (this.commonTokens[normalizedInputSymbol]) {
+                inputTokenInfo = this.commonTokens[normalizedInputSymbol];
+                console.log(`[Jupiter] Using common token for ${normalizedInputSymbol}:`, inputTokenInfo);
+            } else {
+                inputTokenInfo = await this.getTokenBySymbol(normalizedInputSymbol);
+            }
+            
+            if (this.commonTokens[normalizedOutputSymbol]) {
+                outputTokenInfo = this.commonTokens[normalizedOutputSymbol];
+                console.log(`[Jupiter] Using common token for ${normalizedOutputSymbol}:`, outputTokenInfo);
+            } else {
+                outputTokenInfo = await this.getTokenBySymbol(normalizedOutputSymbol);
+            }
 
-//       const quoteUrl = new URL('https://lite-api.jup.ag/quote');
-//       quoteUrl.searchParams.append('inputMint', inputToken.address.toString());
-//       quoteUrl.searchParams.append('outputMint', outputToken.address.toString());
-//       quoteUrl.searchParams.append('amount', amountInSmallestUnits.toString());
-//       // Only include swapMode if it's not the default 'ExactIn'
-//       if (swapMode && swapMode !== 'ExactIn') {
-//         quoteUrl.searchParams.append('swapMode', swapMode);
-//       }
-//       // Removed parameters that could restrict routing: slippageBps, onlyDirectRoutes, asLegacyTransaction, platformFeeBps, feeAccount, computeUnitPriceMicroLamports
+            if (!inputTokenInfo || !outputTokenInfo) {
+                throw new Error('Token information not found');
+            }
 
-//       console.log('Quote URL:', quoteUrl.toString());
+            console.log('[Jupiter] Using tokens for swap:', {
+                input: {
+                    symbol: normalizedInputSymbol,
+                    address: inputTokenInfo.address,
+                    decimals: inputTokenInfo.decimals
+                },
+                output: {
+                    symbol: normalizedOutputSymbol,
+                    address: outputTokenInfo.address,
+                    decimals: outputTokenInfo.decimals
+                }
+            });
 
-//       const quoteResponse = await fetch(quoteUrl.toString(), {
-//         method: 'GET',
-//         headers: {
-//           'Accept': 'application/json',
-//         }
-//       });
+            // Convert to smallest units (integer)
+            const amountRaw = Math.floor(
+                amountInTokenUnits * Math.pow(10, swapMode === 'ExactIn' ? inputTokenInfo.decimals : outputTokenInfo.decimals)
+            );
+            console.log('[Jupiter] Swap amount in smallest units:', amountRaw);
 
-//       console.log('Quote response status:', quoteResponse.status);
+            // Step 1: Get quote from Jupiter
+            const quoteUrl = `${this.baseUrl}/quote?inputMint=${inputTokenInfo.address}&outputMint=${outputTokenInfo.address}&amount=${amountRaw}&slippageBps=${slippageBps}&swapMode=${swapMode}`;
+            console.log('[Jupiter] Quote URL:', quoteUrl);
 
-//       if (!quoteResponse.ok) {
-//         const errorText = await quoteResponse.text();
-//         console.error('Quote API error response:', errorText);
-//         throw new Error(`Failed to fetch quote: ${errorText}`);
-//       }
+            const quoteResponse = await fetch(quoteUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
 
-//       const quote = await quoteResponse.json();
-//       console.log('Quote received:', quote);
+            if (!quoteResponse.ok) {
+                const errorText = await quoteResponse.text();
+                console.error('[Jupiter] Quote API error response:', errorText);
+                throw new Error(`Jupiter API quote error ${quoteResponse.status}: ${errorText}`);
+            }
 
-//       // Calculate amounts in token units for user display
-//       const inputAmount = Number(quote.inAmount) / Math.pow(10, inputToken.decimals);
-//       const outputAmount = Number(quote.outAmount) / Math.pow(10, outputToken.decimals);
+            const quoteData = await quoteResponse.json();
+            console.log('[Jupiter] Full quote response:', JSON.stringify(quoteData, null, 2));
 
-//       // Format message based on swap mode
-//       const message = swapMode === 'ExactIn'
-//         ? `By selling ${inputAmount.toFixed(4)} ${inputSymbol}, you will receive approximately ${outputAmount.toFixed(4)} ${outputSymbol}.`
-//         : `To buy ${outputAmount.toFixed(4)} ${outputSymbol}, you need to spend approximately ${inputAmount.toFixed(4)} ${inputSymbol}.`;
+            if (!quoteData || !quoteData.inAmount || !quoteData.outAmount) {
+                console.error('[Jupiter] No valid quote data found in response:', quoteData);
+                throw new Error(`No swap route found between ${inputTokenSymbol} and ${outputTokenSymbol}. This trading pair may not be supported.`);
+            }
 
-//       return {
-//         inputToken,
-//         outputToken,
-//         amountInTokenUnits,
-//         swapMode,
-//         quote,
-//         message,
-//         inputAmount,
-//         outputAmount
-//       };
-//     } catch (error) {
-//       console.error('Error getting quote:', error);
-//       throw new Error(`Failed to get quote: ${error.message}`);
-//     }
-//   }
+            // Step 2: Get transaction data for the swap
+            const swapUrl = `${this.baseUrl}/swap`;
+            console.log('[Jupiter] Swap URL:', swapUrl);
 
-//   async getTokenInfo(mintAddress) {
-//     try {
-//       await this.initialize();
-//       return this.tokenMap.find(token => token.address === mintAddress);
-//     } catch (error) {
-//       console.error('Error fetching token info:', error);
-//       throw error;
-//     }
-//   }
-// }
+            const swapResponse = await fetch(swapUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    quoteResponse: quoteData,
+                    userPublicKey: userPublicKey,
+                    wrapAndUnwrapSol: true,
+                    useSharedAccounts: true,
+                    prioritizationFeeLamports: computeUnitPriceMicroLamports
+                })
+            });
 
-// const jupiterService = new JupiterService();
-// export default jupiterService;
+            if (!swapResponse.ok) {
+                const errorText = await swapResponse.text();
+                console.error('[Jupiter] Swap API error response:', errorText);
+                throw new Error(`Jupiter API swap error ${swapResponse.status}: ${errorText}`);
+            }
+
+            const swapData = await swapResponse.json();
+            console.log('[Jupiter] Swap response:', swapData);
+
+            if (!swapData.swapTransaction) {
+                throw new Error('No transaction data received from Jupiter API');
+            }
+
+            // Step 3: Deserialize and execute the transaction
+            const transactionData = Buffer.from(swapData.swapTransaction, 'base64');
+            if (!transactionData || transactionData.length === 0) {
+                throw new Error('Invalid transaction data received from Jupiter API');
+            }
+
+            // Handle versioned transactions
+            const transaction = VersionedTransaction.deserialize(transactionData);
+
+            // Sign, send, and wait for confirmation
+            const { signature } = await wallet.signAndSendTransaction(transaction);
+            
+            // Calculate amounts in token units
+            const inAmount = amountRaw / Math.pow(10, inputTokenInfo.decimals);
+            const outAmountRaw = BigInt(quoteData.outAmount);
+            const outAmount = Number(outAmountRaw) / Math.pow(10, outputTokenInfo.decimals);
+
+            const result = {
+                txId: signature,
+                status: 'success',
+                message: 'Swap executed successfully',
+                details: {
+                    fromToken: inputTokenInfo.symbol,
+                    toToken: outputTokenInfo.symbol,
+                    inputAmount: inAmount,
+                    outputAmount: outAmount,
+                    price: outAmount / inAmount,
+                    priceImpact: quoteData.priceImpactPct * 100,
+                    explorerUrl: `https://solscan.io/tx/${signature}`
+                }
+            };
+
+            // Log the success message and Solscan link
+            console.log('Swap successful! Transaction details:', result);
+            console.log('View transaction on Solscan:', result.details.explorerUrl);
+
+            return result;
+        } catch (error) {
+            console.error('Error in swap:', error);
+            // If we have a signature, the transaction was sent successfully
+            if (error.signature) {
+                const result = {
+                    txId: error.signature,
+                    status: 'success',
+                    message: 'Swap executed successfully (confirmation error)',
+                    details: {
+                        explorerUrl: `https://solscan.io/tx/${error.signature}`
+                    }
+                };
+                console.log('Swap successful! Transaction details:', result);
+                console.log('View transaction on Solscan:', result.details.explorerUrl);
+                return result;
+            }
+            throw new Error(`Swap failed: ${error.message}`);
+        }
+    }
+}
+
+export default new RaydiumService();
