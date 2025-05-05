@@ -111,7 +111,7 @@ class RaydiumService {
         inputTokenSymbol,
         outputTokenSymbol,
         amountInTokenUnits,
-        swapMode = 'ExactIn',
+        swapMode,
         slippageBps = 100,
         computeUnitPriceMicroLamports = 100000
     ) {
@@ -169,11 +169,15 @@ class RaydiumService {
                 }
             });
 
-            // Convert to smallest units (integer)
-            const amountRaw = Math.floor(
-                amountInTokenUnits * Math.pow(10, swapMode === 'ExactIn' ? inputTokenInfo.decimals : outputTokenInfo.decimals)
-            );
-            console.log('[Jupiter] Swap amount in smallest units:', amountRaw);
+            // Convert to smallest units (integer) based on swap mode
+            let amountRaw;
+            if (swapMode === 'ExactIn') {
+                amountRaw = Math.floor(amountInTokenUnits * Math.pow(10, inputTokenInfo.decimals));
+                console.log('[Jupiter] ExactIn mode - Input amount in smallest units:', amountRaw);
+            } else {
+                amountRaw = Math.floor(amountInTokenUnits * Math.pow(10, outputTokenInfo.decimals));
+                console.log('[Jupiter] ExactOut mode - Output amount in smallest units:', amountRaw);
+            }
 
             // Step 1: Get quote from Jupiter
             const quoteUrl = `${this.baseUrl}/quote?inputMint=${inputTokenInfo.address}&outputMint=${outputTokenInfo.address}&amount=${amountRaw}&slippageBps=${slippageBps}&swapMode=${swapMode}`;
@@ -245,9 +249,8 @@ class RaydiumService {
             const { signature } = await wallet.signAndSendTransaction(transaction);
             
             // Calculate amounts in token units
-            const inAmount = amountRaw / Math.pow(10, inputTokenInfo.decimals);
-            const outAmountRaw = BigInt(quoteData.outAmount);
-            const outAmount = Number(outAmountRaw) / Math.pow(10, outputTokenInfo.decimals);
+            const inAmount = Number(quoteData.inAmount) / Math.pow(10, inputTokenInfo.decimals);
+            const outAmount = Number(quoteData.outAmount) / Math.pow(10, outputTokenInfo.decimals);
 
             const result = {
                 txId: signature,
@@ -258,9 +261,10 @@ class RaydiumService {
                     toToken: outputTokenInfo.symbol,
                     inputAmount: inAmount,
                     outputAmount: outAmount,
-                    price: outAmount / inAmount,
+                    price: swapMode === 'ExactIn' ? outAmount / inAmount : inAmount / outAmount,
                     priceImpact: quoteData.priceImpactPct * 100,
-                    explorerUrl: `https://solscan.io/tx/${signature}`
+                    explorerUrl: `https://solscan.io/tx/${signature}`,
+                    swapMode: swapMode
                 }
             };
 
@@ -278,7 +282,8 @@ class RaydiumService {
                     status: 'success',
                     message: 'Swap executed successfully (confirmation error)',
                     details: {
-                        explorerUrl: `https://solscan.io/tx/${error.signature}`
+                        explorerUrl: `https://solscan.io/tx/${error.signature}`,
+                        swapMode: swapMode
                     }
                 };
                 console.log('Swap successful! Transaction details:', result);
@@ -286,6 +291,81 @@ class RaydiumService {
                 return result;
             }
             throw new Error(`Swap failed: ${error.message}`);
+        }
+    }
+
+    async getQuote(
+        inputTokenSymbol,
+        outputTokenSymbol,
+        amountInTokenUnits,
+        swapMode,
+        slippageBps = 100
+    ) {
+        try {
+            // Normalize the token symbols to uppercase
+            const normalizedInputSymbol = inputTokenSymbol.toUpperCase();
+            const normalizedOutputSymbol = outputTokenSymbol.toUpperCase();
+            
+            // Get token information
+            const inputTokenInfo = await this.getTokenBySymbol(normalizedInputSymbol);
+            const outputTokenInfo = await this.getTokenBySymbol(normalizedOutputSymbol);
+
+            if (!inputTokenInfo || !outputTokenInfo) {
+                throw new Error('Token information not found');
+            }
+
+            // Convert to smallest units (integer) based on swap mode
+            let amountRaw;
+            if (swapMode === 'ExactIn') {
+                amountRaw = Math.floor(amountInTokenUnits * Math.pow(10, inputTokenInfo.decimals));
+                console.log('[Jupiter] ExactIn mode - Input amount in smallest units:', amountRaw);
+            } else {
+                amountRaw = Math.floor(amountInTokenUnits * Math.pow(10, outputTokenInfo.decimals));
+                console.log('[Jupiter] ExactOut mode - Output amount in smallest units:', amountRaw);
+            }
+
+            // Get quote from Jupiter
+            const quoteUrl = `${this.baseUrl}/quote?inputMint=${inputTokenInfo.address}&outputMint=${outputTokenInfo.address}&amount=${amountRaw}&slippageBps=${slippageBps}&swapMode=${swapMode}`;
+            console.log('[Jupiter] Quote URL:', quoteUrl);
+
+            const quoteResponse = await fetch(quoteUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!quoteResponse.ok) {
+                const errorText = await quoteResponse.text();
+                console.error('[Jupiter] Quote API error response:', errorText);
+                throw new Error(`Jupiter API quote error ${quoteResponse.status}: ${errorText}`);
+            }
+
+            const quoteData = await quoteResponse.json();
+            console.log('[Jupiter] Full quote response:', JSON.stringify(quoteData, null, 2));
+
+            if (!quoteData || !quoteData.inAmount || !quoteData.outAmount) {
+                console.error('[Jupiter] No valid quote data found in response:', quoteData);
+                throw new Error(`No swap route found between ${inputTokenSymbol} and ${outputTokenSymbol}. This trading pair may not be supported.`);
+            }
+
+            // Calculate amounts in token units
+            const inAmount = Number(quoteData.inAmount) / Math.pow(10, inputTokenInfo.decimals);
+            const outAmount = Number(quoteData.outAmount) / Math.pow(10, outputTokenInfo.decimals);
+
+            return {
+                inputToken: inputTokenInfo,
+                outputToken: outputTokenInfo,
+                inputAmount: inAmount,
+                outputAmount: outAmount,
+                price: swapMode === 'ExactIn' ? outAmount / inAmount : inAmount / outAmount,
+                priceImpact: quoteData.priceImpactPct * 100,
+                slippage: slippageBps / 100,
+                swapMode: swapMode
+            };
+        } catch (error) {
+            console.error('Error in getQuote:', error);
+            throw new Error(`Failed to get quote: ${error.message}`);
         }
     }
 }

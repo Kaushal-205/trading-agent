@@ -16,6 +16,7 @@ export default function TradingAgent() {
   const [awaitingInputToken, setAwaitingInputToken] = useState(false);
   const [lastTradeRequest, setLastTradeRequest] = useState(null);
   const [lastTransaction, setLastTransaction] = useState(null);
+  const [swapMode, setSwapMode] = useState('ExactIn'); // Default to ExactIn
   
   // Add ref for the chat container
   const chatContainerRef = useRef(null);
@@ -38,6 +39,50 @@ export default function TradingAgent() {
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
 
     try {
+      // Check if user is specifying an amount for input or output
+      const amountMatch = userMessage.match(/(\d+(?:\.\d+)?)\s*(SOL|USDC|USDT|BONK|TRUMP)/i);
+      if (amountMatch) {
+        const amount = parseFloat(amountMatch[1]);
+        const token = amountMatch[2].toUpperCase();
+        
+        // Use LLM to detect if this is input or output amount
+        const response = await agentService.processUserRequest(userMessage, publicKey.toString());
+        
+        // Extract swap mode from LLM response
+        const swapMode = response.details?.swapMode || 'ExactIn';
+        setSwapMode(swapMode);
+        
+        // Process the trade with detected mode
+        setPendingTrade({
+          amount,
+          token,
+          swapMode,
+          inputToken: swapMode === 'ExactIn' ? token : 'USDC', // Default to USDC as the other token
+          intent: swapMode === 'ExactIn' ? 'spend' : 'receive'
+        });
+        
+        // Fetch quote with detected mode
+        setIsLoadingQuote(true);
+        try {
+          const quote = await jupiterService.getQuote(
+            swapMode === 'ExactIn' ? token : 'USDC',
+            swapMode === 'ExactIn' ? 'USDC' : token,
+            amount,
+            swapMode
+          );
+          setQuote(quote);
+        } catch (error) {
+          console.error('Error fetching quote:', error);
+          setMessages(prev => [...prev, { 
+            role: 'agent', 
+            content: `Failed to fetch quote: ${error.message}` 
+          }]);
+        } finally {
+          setIsLoadingQuote(false);
+        }
+        return;
+      }
+
       const response = await agentService.processUserRequest(userMessage, publicKey.toString());
 
       // Add agent response to chat
@@ -69,36 +114,27 @@ export default function TradingAgent() {
             const quote = await jupiterService.getQuote(
               response.inputToken,
               response.token,
-              response.amount
+              response.amount,
+              response.swapMode
             );
             setQuote(quote);
           } catch (error) {
             console.error('Error fetching quote:', error);
             setMessages(prev => [...prev, { 
-              role: 'error', 
+              role: 'agent', 
               content: `Failed to fetch quote: ${error.message}` 
             }]);
           } finally {
             setIsLoadingQuote(false);
           }
         }
-      } else {
-        setPendingTrade(null);
-        setQuote(null);
-        setAwaitingInputToken(false);
-        setLastTradeRequest(null);
       }
-
     } catch (error) {
       console.error('Error processing message:', error);
       setMessages(prev => [...prev, { 
         role: 'agent', 
         content: `Error: ${error.message}` 
       }]);
-      setPendingTrade(null);
-      setQuote(null);
-      setAwaitingInputToken(false);
-      setLastTradeRequest(null);
     } finally {
       setIsProcessing(false);
     }
@@ -108,6 +144,40 @@ export default function TradingAgent() {
     if (!lastTradeRequest) return;
 
     try {
+      // If we're waiting for input/output confirmation
+      if (typeof lastTradeRequest.amount === 'number') {
+        const isInput = token.toLowerCase() === 'input';
+        setSwapMode(isInput ? 'ExactIn' : 'ExactOut');
+        
+        // Process the trade with the specified mode
+        setPendingTrade({
+          ...lastTradeRequest,
+          swapMode: isInput ? 'ExactIn' : 'ExactOut'
+        });
+        
+        // Fetch quote with the specified mode
+        setIsLoadingQuote(true);
+        try {
+          const quote = await jupiterService.getQuote(
+            isInput ? lastTradeRequest.token : 'USDC', // Default to USDC as the other token
+            isInput ? 'USDC' : lastTradeRequest.token,
+            lastTradeRequest.amount,
+            isInput ? 'ExactIn' : 'ExactOut'
+          );
+          setQuote(quote);
+        } catch (error) {
+          console.error('Error fetching quote:', error);
+          setMessages(prev => [...prev, { 
+            role: 'agent', 
+            content: `Failed to fetch quote: ${error.message}` 
+          }]);
+        } finally {
+          setIsLoadingQuote(false);
+        }
+        setAwaitingInputToken(false);
+        return;
+      }
+
       // Update the trade request with the input token
       const updatedTradeRequest = {
         ...lastTradeRequest,
@@ -147,16 +217,39 @@ export default function TradingAgent() {
     if (!pendingTrade || !quote) return;
 
     try {
+      setIsProcessing(true);
       setMessages(prev => [...prev, { 
         role: 'agent', 
-        content: 'Trade execution is not implemented yet. This is just a demo of the quote functionality.' 
+        content: 'Executing trade...' 
       }]);
+
+      const result = await jupiterService.swap(
+        pendingTrade.inputToken,
+        pendingTrade.token,
+        pendingTrade.amount,
+        pendingTrade.swapMode
+      );
+
+      if (result.status === 'success') {
+        setLastTransaction(result.details);
+        setMessages(prev => [...prev, { 
+          role: 'agent', 
+          content: `Trade executed successfully! View it on Solscan: ${result.details.explorerUrl}` 
+        }]);
+      } else {
+        throw new Error(result.message || 'Trade execution failed');
+      }
     } catch (error) {
       console.error('Trade error:', error);
       setMessages(prev => [...prev, { 
         role: 'error', 
-        content: 'Failed to prepare transaction. Please try again.' 
+        content: `Failed to execute trade: ${error.message}` 
       }]);
+    } finally {
+      setIsProcessing(false);
+      setPendingTrade(null);
+      setQuote(null);
+      setLastTradeRequest(null);
     }
   }, [pendingTrade, quote]);
 
@@ -166,11 +259,6 @@ export default function TradingAgent() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 shadow-md">
-        <h1 className="text-2xl font-bold">Solana Trading Agent</h1>
-        <p className="text-sm opacity-80">Trade tokens on Solana with AI assistance</p>
-      </div>
 
       {/* Chat Area */}
       <div 

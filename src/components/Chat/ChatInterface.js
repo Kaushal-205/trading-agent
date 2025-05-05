@@ -24,14 +24,14 @@ const ChatInterface = () => {
       setMessages([
         {
           role: 'assistant',
-          content: 'Welcome to the Solana Trading Chatbot! Please connect your wallet to get started.'
+          content: 'Please connect your wallet to get started.'
         }
       ]);
     } else {
       setMessages([
         {
           role: 'assistant',
-          content: 'Welcome to the Solana Trading Chatbot! I can help you with:\n\n' +
+          content: 'I can help you with:\n\n' +
                    '=> Trading Tokens on Solana \n' +
                    '=> Checking Token Prices \n' +
                    '=> Viewing your Portfolio'
@@ -80,22 +80,24 @@ const ChatInterface = () => {
   };
 
   return (
-    <div className="flex flex-col h-[600px] bg-gray-50 rounded-lg shadow-lg">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="flex flex-col h-[600px] bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-gray-100">
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {messages.map((message, index) => (
           <Message key={index} role={message.role} content={message.content} />
         ))}
         {isTyping && (
-          <div className="flex items-center space-x-2 bg-white p-3 rounded-lg shadow-sm">
-            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" />
-            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-100" />
-            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-200" />
-            <span className="text-sm text-gray-500 ml-2">Agent is typing...</span>
+          <div className="flex items-center space-x-2 bg-white/50 backdrop-blur-sm p-4 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex space-x-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" />
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-100" />
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-200" />
+            </div>
+            <span className="text-sm text-gray-500 ml-2 font-medium">Agent is typing...</span>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
-      <div className="border-t border-gray-200 p-4">
+      <div className="border-t border-gray-100 p-4 bg-white/50 backdrop-blur-sm">
         <ChatInput onSendMessage={handleSendMessage} />
       </div>
     </div>

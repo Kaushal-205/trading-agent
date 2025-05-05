@@ -4,23 +4,23 @@ const Message = ({ role, content }) => {
     return (
       <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
         <div
-          className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
+          className={`max-w-[80%] rounded-2xl px-5 py-4 shadow-sm transition-all duration-200 ${
             isUser
-              ? 'bg-blue-600 text-white rounded-br-none'
-              : 'bg-white text-gray-800 rounded-bl-none border border-gray-200'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-br-none hover:shadow-md'
+              : 'bg-white/80 backdrop-blur-sm text-gray-800 rounded-bl-none border border-gray-100 hover:shadow-md'
           }`}
         >
-          <div className="flex items-center mb-1">
+          <div className="flex items-center mb-2">
             {!isUser && (
-              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center mr-2">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-r from-blue-100 to-indigo-100 flex items-center justify-center mr-3 shadow-sm">
                 <span className="text-blue-600 text-sm font-bold">A</span>
               </div>
             )}
-            <span className={`text-xs ${isUser ? 'text-blue-100' : 'text-gray-500'}`}>
+            <span className={`text-xs font-medium ${isUser ? 'text-blue-100' : 'text-gray-500'}`}>
               {isUser ? 'You' : 'Agent'}
             </span>
           </div>
-          <div className="whitespace-pre-wrap">{content}</div>
+          <div className="whitespace-pre-wrap text-sm leading-relaxed">{content}</div>
         </div>
       </div>
     );
