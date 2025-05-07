@@ -1,14 +1,15 @@
+"use client"
+
 import { AppSidebar } from "@/components/app-sidebar"
 import { Header } from "@/components/header"
 import { Dashboard } from "@/components/dashboard"
 import { ChatInterface } from "@/components/chat-interface"
+import { useSearchParams } from "next/navigation"
 
-export default function Home({
-  searchParams,
-}: {
-  searchParams: { tab?: string }
-}) {
-  const showDashboard = searchParams.tab === "dashboard"
+export default function Home() {
+  const searchParams = useSearchParams()
+  const tab = searchParams.get('tab')
+  const showDashboard = tab === "dashboard"
 
   return (
     <div className="flex w-full min-h-screen bg-background">
