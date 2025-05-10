@@ -7,6 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useOnramp } from '@/hooks/useOnramp'
+import { useJupiter } from '@/hooks/useJupiter'
+import { VersionedTransaction } from "@solana/web3.js"
+
+// Import token list
+import tokenList from '../token.json'
 
 interface Message {
   role: "user" | "assistant"
@@ -30,9 +35,10 @@ interface Message {
 }
 
 interface LLMResponse {
-  intent: "buy_sol" | "explore_yield" | "view_portfolio" | "out_of_scope"
+  intent: "buy_sol" | "buy_token" | "explore_yield" | "view_portfolio" | "out_of_scope"
   amount?: number | null
-  currency?: "SOL"
+  currency?: string
+  token?: string
   message: string
 }
 
@@ -54,18 +60,36 @@ interface OnrampQuote {
   redirectUrl?: string;
 }
 
-const SYSTEM_PROMPT = `You are a financial assistant for a Solana-based Trading/Yield Agent. Your role is to parse user inputs and identify one of the following intents: buy SOL, explore yield options, view portfolio, or out-of-scope.
+// Add interface for Jupiter swap quote
+interface SwapQuoteWidget {
+  requestId: string;
+  inputToken: string;
+  inputAmount: number;
+  outputToken: string;
+  outputAmount: number;
+  priceImpact: string;
+  exchangeRate: number;
+  transaction: string;
+}
+
+const SYSTEM_PROMPT = `You are a financial assistant for a Solana-based Trading/Yield Agent. Your role is to parse user inputs and identify one of the following intents: buy SOL, buy token, explore yield options, view portfolio, or out-of-scope.
 
 For buy SOL requests, parse the amount and currency. Examples:
 - "I want to buy 1 SOL" -> { "intent": "buy_sol", "amount": 1, "currency": "SOL" }
 - "Buy 0.5 SOL" -> { "intent": "buy_sol", "amount": 0.5, "currency": "SOL" }
 - "Purchase 2 SOL" -> { "intent": "buy_sol", "amount": 2, "currency": "SOL" }
 
+For buy token requests, parse the amount and token name. Examples:
+- "I want to buy 10 USDC" -> { "intent": "buy_token", "amount": 10, "token": "USDC" }
+- "Buy 5 Trump token" -> { "intent": "buy_token", "amount": 5, "token": "TRUMP" }
+- "Get me 20 BONK" -> { "intent": "buy_token", "amount": 20, "token": "BONK" }
+
 For each response, return a structured JSON with:
 {
-  "intent": "buy_sol" | "explore_yield" | "view_portfolio" | "out_of_scope",
-  "amount": number | null,  // Required for buy_sol intent
+  "intent": "buy_sol" | "buy_token" | "explore_yield" | "view_portfolio" | "out_of_scope",
+  "amount": number | null,  // Required for buy_sol and buy_token intents
   "currency": "SOL",       // Required for buy_sol intent
+  "token": string,         // Required for buy_token intent
   "message": string        // User-friendly response
 }
 
@@ -143,17 +167,78 @@ function QuoteWidget({ quote, onConfirm, onCancel }: QuoteWidgetProps) {
   );
 }
 
+// New component for Jupiter swap quote widget
+interface SwapWidgetProps {
+  quote: SwapQuoteWidget;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function SwapWidget({ quote, onConfirm, onCancel }: SwapWidgetProps) {
+  return (
+    <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold text-white">Jupiter Swap</h3>
+        <span className="text-[#34C759] text-lg font-bold">
+          {quote.outputAmount} {quote.outputToken}
+        </span>
+      </div>
+      
+      <div className="space-y-2 text-sm text-gray-400">
+        <div className="flex justify-between">
+          <span>You Pay:</span>
+          <span className="text-white">{quote.inputAmount.toFixed(4)} {quote.inputToken}</span>
+        </div>
+        <div className="flex justify-between">
+          <span>You Receive:</span>
+          <span className="text-white">{quote.outputAmount.toFixed(6)} {quote.outputToken}</span>
+        </div>
+        <div className="flex justify-between">
+          <span>Price Impact:</span>
+          <span className="text-white">{quote.priceImpact}%</span>
+        </div>
+        <div className="flex justify-between">
+          <span>Exchange Rate:</span>
+          <span className="text-white">1 {quote.inputToken} = {quote.exchangeRate.toFixed(6)} {quote.outputToken}</span>
+        </div>
+        <div className="flex justify-between">
+          <span>Network:</span>
+          <span className="text-white">Solana</span>
+        </div>
+      </div>
+
+      <div className="flex gap-3 mt-4">
+        <Button
+          onClick={onConfirm}
+          className="flex-1 bg-[#34C759] hover:bg-[#2FB350] text-white"
+        >
+          <Check className="h-4 w-4 mr-2" />
+          Approve Swap
+        </Button>
+        <Button
+          onClick={onCancel}
+          variant="outline"
+          className="flex-1 border-[#34C759] text-[#34C759] hover:bg-[#34C759] hover:text-white"
+        >
+          <X className="h-4 w-4 mr-2" />
+          Reject
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Hello! I can help you buy SOL, explore yield options, or check your portfolio. What would you like to do?"
+      content: "Hello! I can help you buy SOL, buy other tokens, explore yield options, or check your portfolio. What would you like to do?"
     }
   ])
   const [input, setInput] = useState("")
   const [isTyping, setIsTyping] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const { connected, publicKey } = useWallet()
+  const { connected, publicKey, signTransaction } = useWallet()
   const { 
     isProcessing: isProcessingBuy, 
     currentQuote, 
@@ -164,6 +249,21 @@ export function ChatInterface() {
     handleSuccess,
     handleCancel
   } = useOnramp()
+
+  // Add Jupiter hook
+  const {
+    isLoading: isLoadingSwap,
+    currentQuote: jupiterQuote,
+    swapResult,
+    error: jupiterError,
+    getQuote: getJupiterQuote,
+    executeSwap,
+    clearQuote: clearJupiterQuote,
+    clearResult: clearSwapResult
+  } = useJupiter()
+
+  // State for Jupiter swap quote widget
+  const [swapQuoteWidget, setSwapQuoteWidget] = useState<SwapQuoteWidget | null>(null)
 
   // Add useEffect to handle URL parameters
   useEffect(() => {
@@ -188,6 +288,24 @@ export function ChatInterface() {
       window.history.replaceState({}, '', '/chat');
     }
   }, [handleSuccess, handleCancel]);
+
+  // Add effect to handle swap result
+  useEffect(() => {
+    if (swapResult) {
+      if (swapResult.status === 'Success') {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: `Your token swap was successful! Transaction signature: ${swapResult.signature}`
+        }]);
+      } else {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: `Swap failed: ${swapResult.error || 'Unknown error'}`
+        }]);
+      }
+      clearSwapResult();
+    }
+  }, [swapResult, clearSwapResult]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -251,14 +369,27 @@ export function ChatInterface() {
         // If JSON parsing fails, analyze the text response
         console.log('LLM returned non-JSON response:', content);
         
-        // Check if the response contains a buy request
-        const buyMatch = content.match(/buy\s+(\d+(?:\.\d+)?)\s*sol/i);
-        if (buyMatch) {
-          const amount = parseFloat(buyMatch[1]);
+        // Check if the response contains a buy SOL request
+        const solMatch = content.match(/buy\s+(\d+(?:\.\d+)?)\s*sol/i);
+        if (solMatch) {
+          const amount = parseFloat(solMatch[1]);
           return {
             intent: "buy_sol",
             amount: amount,
             currency: "SOL",
+            message: content
+          };
+        }
+
+        // Check if the response contains a buy token request
+        const tokenMatch = content.match(/buy\s+(\d+(?:\.\d+)?)\s*(USDC|TRUMP|BONK|PEPE|DOGE|BTC)/i);
+        if (tokenMatch) {
+          const amount = parseFloat(tokenMatch[1]);
+          const token = tokenMatch[2].toUpperCase();
+          return {
+            intent: "buy_token",
+            amount: amount,
+            token: token,
             message: content
           };
         }
@@ -292,6 +423,15 @@ export function ChatInterface() {
       };
     }
   }
+
+  // Function to find token by name or symbol
+  const findToken = (tokenName: string) => {
+    const normalizedTokenName = tokenName.toLowerCase();
+    return tokenList.find(token => 
+      token.symbol.toLowerCase() === normalizedTokenName || 
+      token.name.toLowerCase().includes(normalizedTokenName)
+    );
+  };
 
   const fetchLendingOpportunities = async () => {
     try {
@@ -362,6 +502,141 @@ export function ChatInterface() {
     }
   };
 
+  // Function to handle buying a token with Jupiter
+  const handleBuyToken = async (amount: number, tokenName: string) => {
+    if (!publicKey) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "Please connect your Solana wallet first to receive your tokens."
+      }]);
+      return;
+    }
+
+    // Find token in the token list
+    const token = findToken(tokenName);
+    if (!token) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `Sorry, I couldn't find the token "${tokenName}" in our supported tokens list.`
+      }]);
+      return;
+    }
+
+    try {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `Getting quote to buy ${amount} ${token.symbol} with SOL...`
+      }]);
+
+      // Get Jupiter swap quote using ExactOut mode
+      const quote = await getJupiterQuote(token.address, amount);
+      
+      if (jupiterError) {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: `Error: ${jupiterError}`
+        }]);
+        return;
+      }
+
+      if (quote && quote.transaction) {
+        // Calculate amounts based on decimals
+        // inAmount is SOL (always 9 decimals)
+        const inAmountNumber = parseFloat(quote.inAmount) / Math.pow(10, 9);
+        // outAmount is the target token with its own decimal places
+        const outAmountNumber = parseFloat(quote.outAmount) / Math.pow(10, token.decimals);
+        // Calculate exchange rate (how much output token per 1 SOL)
+        const exchangeRate = outAmountNumber / inAmountNumber;
+
+        // Create quote widget data
+        const quoteWidget: SwapQuoteWidget = {
+          requestId: quote.requestId,
+          inputToken: "SOL",
+          inputAmount: inAmountNumber,
+          outputToken: token.symbol,
+          outputAmount: outAmountNumber,
+          priceImpact: quote.priceImpactPct,
+          exchangeRate: exchangeRate,
+          transaction: quote.transaction
+        };
+
+        setSwapQuoteWidget(quoteWidget);
+
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: `I've found a swap quote to buy ${amount} ${token.symbol}. Would you like to proceed?`
+        }]);
+      } else {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: "Sorry, I couldn't get a swap quote at this time. Please try again later."
+        }]);
+      }
+    } catch (error) {
+      console.error('Error in handleBuyToken:', error);
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: error instanceof Error 
+          ? `Error: ${error.message}`
+          : "I'm having trouble processing your token swap request. Please try again."
+      }]);
+    }
+  };
+
+  // Function to handle Jupiter swap confirmation
+  const handleConfirmSwap = async () => {
+    if (!swapQuoteWidget || !publicKey || !signTransaction) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "There was an error with the swap. Please try again."
+      }]);
+      return;
+    }
+
+    try {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "Please approve the transaction in your wallet..."
+      }]);
+
+      // Deserialize and sign the transaction
+      const transaction = VersionedTransaction.deserialize(
+        Buffer.from(swapQuoteWidget.transaction, 'base64')
+      );
+
+      // Sign the transaction with the user's wallet
+      const signedTransaction = await signTransaction(transaction);
+      
+      // Serialize the signed transaction
+      const serializedTransaction = Buffer.from(signedTransaction.serialize()).toString('base64');
+      
+      // Execute the swap
+      await executeSwap(serializedTransaction, swapQuoteWidget.requestId);
+      
+      // Clear the quote widget
+      setSwapQuoteWidget(null);
+    } catch (error) {
+      console.error('Error confirming swap:', error);
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: error instanceof Error 
+          ? `Error: ${error.message}`
+          : "There was an error confirming your swap. Please try again."
+      }]);
+      setSwapQuoteWidget(null);
+    }
+  };
+
+  // Function to handle Jupiter swap cancellation
+  const handleCancelSwap = () => {
+    clearJupiterQuote();
+    setSwapQuoteWidget(null);
+    setMessages(prev => [...prev, {
+      role: "assistant",
+      content: "Swap cancelled. Would you like to try a different amount?"
+    }]);
+  };
+
   const handleConfirmPurchase = () => {
     try {
       confirmPurchase();
@@ -405,6 +680,17 @@ export function ChatInterface() {
             setMessages(prev => [...prev, {
               role: "assistant",
               content: "Please specify a valid amount of SOL to buy."
+            }]);
+          }
+          break;
+
+        case "buy_token":
+          if (llmResponse.amount && llmResponse.amount > 0 && llmResponse.token) {
+            await handleBuyToken(llmResponse.amount, llmResponse.token);
+          } else {
+            setMessages(prev => [...prev, {
+              role: "assistant",
+              content: "Please specify a valid amount and token to buy."
             }]);
           }
           break;
@@ -578,6 +864,17 @@ export function ChatInterface() {
             </div>
           </div>
         )}
+        {swapQuoteWidget && (
+          <div className="flex justify-start">
+            <div className="max-w-[80%]">
+              <SwapWidget
+                quote={swapQuoteWidget}
+                onConfirm={handleConfirmSwap}
+                onCancel={handleCancelSwap}
+              />
+            </div>
+          </div>
+        )}
         {isTyping && (
           <div className="flex justify-start">
             <div className="bg-[#252C3B] rounded-lg p-3">
@@ -601,6 +898,13 @@ export function ChatInterface() {
             onClick={() => handleQuickAction("Buy 0.1 SOL")}
           >
             Buy SOL
+          </Button>
+          <Button
+            variant="outline"
+            className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
+            onClick={() => handleQuickAction("Buy 10 USDC")}
+          >
+            Buy USDC
           </Button>
           <Button
             variant="outline"
