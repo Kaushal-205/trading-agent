@@ -92,7 +92,7 @@ export function useOnramp(): UseOnrampReturn {
         },
         estimatedProcessingTime: "2-5 minutes",
         exchangeRate: 0, // This will be calculated by MoonPay
-        network: 'devnet',
+        network: 'mainnet-beta',
         redirectUrl: urlString
       };
 

@@ -1,5 +1,4 @@
 "use client"
-
 import { useState, useRef, useEffect } from "react"
 import { Send, ArrowRight, Check, X } from "lucide-react"
 import { useWallet } from "@solana/wallet-adapter-react"
@@ -9,6 +8,9 @@ import { cn } from "@/lib/utils"
 import { useOnramp } from '@/hooks/useOnramp'
 import { useJupiter } from '@/hooks/useJupiter'
 import { VersionedTransaction } from "@solana/web3.js"
+import { fetchSolendPoolsByMint, SolendPool } from '../lib/solend'
+import { Connection, PublicKey, clusterApiUrl } from '@solana/web3.js'
+import BN from 'bn.js'
 
 // Import token list
 import tokenList from '../token.json'
@@ -228,6 +230,14 @@ function SwapWidget({ quote, onConfirm, onCancel }: SwapWidgetProps) {
   );
 }
 
+// Add a helper to extract token symbol from user input for yield intent
+function extractTokenSymbolFromYieldQuery(query: string): string | null {
+  // Try to match "yield option for usdc", "show me yield for usdc", etc.
+  const match = query.match(/yield(?: option[s]?)?(?: for)? (\w+)/i);
+  if (match) return match[1].toUpperCase();
+  return null;
+}
+
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -238,7 +248,7 @@ export function ChatInterface() {
   const [input, setInput] = useState("")
   const [isTyping, setIsTyping] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const { connected, publicKey, signTransaction } = useWallet()
+  const { connected, publicKey, sendTransaction } = useWallet()
   const { 
     isProcessing: isProcessingBuy, 
     currentQuote, 
@@ -264,6 +274,13 @@ export function ChatInterface() {
 
   // State for Jupiter swap quote widget
   const [swapQuoteWidget, setSwapQuoteWidget] = useState<SwapQuoteWidget | null>(null)
+
+  // Lending state
+  const [solendPools, setSolendPools] = useState<SolendPool[] | null>(null)
+  const [lendingToken, setLendingToken] = useState<{ symbol: string, mint: string } | null>(null)
+  const [lendingAmount, setLendingAmount] = useState<number | null>(null)
+  const [selectedPool, setSelectedPool] = useState<SolendPool | null>(null)
+  const [showLendingConfirm, setShowLendingConfirm] = useState(false)
 
   // Add useEffect to handle URL parameters
   useEffect(() => {
@@ -566,6 +583,8 @@ export function ChatInterface() {
           role: "assistant",
           content: `I've found a swap quote to buy ${amount} ${token.symbol}. Would you like to proceed?`
         }]);
+        // After swap, show lending options for this token
+        setTimeout(() => handleShowLendingOptions(token.symbol, token.address), 2000)
       } else {
         setMessages(prev => [...prev, {
           role: "assistant",
@@ -585,7 +604,7 @@ export function ChatInterface() {
 
   // Function to handle Jupiter swap confirmation
   const handleConfirmSwap = async () => {
-    if (!swapQuoteWidget || !publicKey || !signTransaction) {
+    if (!swapQuoteWidget || !publicKey || !sendTransaction) {
       setMessages(prev => [...prev, {
         role: "assistant",
         content: "There was an error with the swap. Please try again."
@@ -605,10 +624,11 @@ export function ChatInterface() {
       );
 
       // Sign the transaction with the user's wallet
-      const signedTransaction = await signTransaction(transaction);
+      const connection = new Connection(clusterApiUrl('mainnet-beta'));
+      const signature = await sendTransaction(transaction, connection);
       
       // Serialize the signed transaction
-      const serializedTransaction = Buffer.from(signedTransaction.serialize()).toString('base64');
+      const serializedTransaction = Buffer.from(transaction.serialize()).toString('base64');
       
       // Execute the swap
       await executeSwap(serializedTransaction, swapQuoteWidget.requestId);
@@ -660,6 +680,7 @@ export function ChatInterface() {
     }]);
   };
 
+  // Update handleSend to support 'explore_yield' with token
   const handleSend = async () => {
     if (!input.trim()) return
 
@@ -695,14 +716,35 @@ export function ChatInterface() {
           }
           break;
 
-        case "explore_yield":
-          const opportunities = await fetchLendingOpportunities();
-          setMessages(prev => [...prev, {
-            role: "assistant",
-            content: llmResponse.message, // Use LLM's message for yield options
-            options: opportunities
-          }]);
+        case "explore_yield": {
+          // Try to extract token symbol from user message
+          let tokenSymbol = llmResponse.token;
+          if (!tokenSymbol) {
+            tokenSymbol = extractTokenSymbolFromYieldQuery(userMessage) || undefined;
+          }
+          if (tokenSymbol) {
+            // Find token mint from tokenList
+            const token = tokenList.find(t => t.symbol.toUpperCase() === tokenSymbol.toUpperCase());
+            if (token) {
+              setMessages(prev => [...prev, { role: "assistant", content: `Looking up yield options for ${token.symbol}...` }]);
+              const pools = await fetchSolendPoolsByMint(token.address);
+              if (pools.length === 0) {
+                setMessages(prev => [...prev, { role: "assistant", content: `No Solend lending pools found for ${token.symbol}.` }]);
+              } else {
+                setMessages(prev => [...prev, { role: "assistant", content: `Here are Solend lending options for ${token.symbol}:\n` + pools.map(p => `${p.symbol}: ${p.apy}% APY`).join("\n") + "\nHow much would you like to invest?" }]);
+                if (typeof token.symbol === 'string' && typeof token.address === 'string') {
+                  setSolendPools(pools);
+                  setLendingToken({ symbol: token.symbol, mint: token.address });
+                }
+              }
+            } else {
+              setMessages(prev => [...prev, { role: "assistant", content: `Token ${tokenSymbol} not found in supported list.` }]);
+            }
+          } else {
+            setMessages(prev => [...prev, { role: "assistant", content: "Please specify a token to explore yield options for." }]);
+          }
           break;
+        }
 
         case "view_portfolio":
           // TODO: Implement portfolio view logic
@@ -770,6 +812,84 @@ export function ChatInterface() {
         role: "assistant",
         content: "Failed to process staking request. Please try again."
       }]);
+    }
+  }
+
+  // After a successful token buy, fetch Solend pools for that token
+  const handleShowLendingOptions = async (tokenSymbol: string, tokenMint: string) => {
+    setLendingToken({ symbol: tokenSymbol, mint: tokenMint })
+    setMessages(prev => [...prev, {
+      role: "assistant",
+      content: `Looking up lending options for ${tokenSymbol}...`
+    }])
+    const pools = await fetchSolendPoolsByMint(tokenMint)
+    if (pools.length === 0) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `No Solend lending pools found for ${tokenSymbol}.`
+      }])
+      setSolendPools(null)
+      return
+    }
+    setSolendPools(pools)
+    setMessages(prev => [...prev, {
+      role: "assistant",
+      content: `Here are Solend lending options for ${tokenSymbol}:\n` + pools.map(p => `${p.symbol}: ${p.apy}% APY`).join("\n") + "\nHow much would you like to invest?"
+    }])
+  }
+
+  // When user enters amount, show confirmation
+  const handleLendingAmount = (amount: number, pool: SolendPool) => {
+    setLendingAmount(amount)
+    setSelectedPool(pool)
+    setShowLendingConfirm(true)
+    setMessages(prev => [...prev, {
+      role: "assistant",
+      content: `You're about to lend ${amount} ${pool.symbol} for ${pool.apy}% APY. Proceed?`
+    }])
+  }
+
+  // On confirmation, perform real lending
+  const handleLendNow = async () => {
+    setShowLendingConfirm(false)
+    setMessages(prev => [...prev, {
+      role: "assistant",
+      content: `Lending ${lendingAmount} ${selectedPool?.symbol} at ${selectedPool?.apy}% APY... Please approve the transaction in your wallet.`
+    }])
+    try {
+      if (!selectedPool || !publicKey || !lendingAmount || !sendTransaction) throw new Error('Missing lending info');
+      // Call the API route to get the serialized transaction
+      console.log('selectedPool', selectedPool);
+      const res = await fetch('http://localhost:4000/api/solend-lend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pool: selectedPool.pool,
+          amount: lendingAmount,
+          userPublicKey: publicKey.toString(),
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to get transaction');
+      // Deserialize the transaction
+      const transaction = VersionedTransaction.deserialize(Buffer.from(data.transaction, 'base64'));
+      // Send transaction using wallet adapter's sendTransaction
+      const connection = new Connection(clusterApiUrl('mainnet-beta'));
+      const signature = await sendTransaction(transaction, connection);
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `Successfully lent ${lendingAmount} ${selectedPool.symbol} on Solend! Transaction signature: ${signature}. You are now earning ${selectedPool.apy}% APY.`
+      }])
+    } catch (e) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `Lending failed: ${e instanceof Error ? e.message : 'Unknown error'}`
+      }])
+    } finally {
+      setLendingAmount(null)
+      setSelectedPool(null)
+      setSolendPools(null)
+      setLendingToken(null)
     }
   }
 
@@ -872,6 +992,32 @@ export function ChatInterface() {
                 onConfirm={handleConfirmSwap}
                 onCancel={handleCancelSwap}
               />
+            </div>
+          </div>
+        )}
+        {solendPools && !showLendingConfirm && (
+          <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4">
+            <h3 className="text-lg font-semibold text-white mb-2">Solend Lending Options for {lendingToken?.symbol}</h3>
+            {solendPools.map(pool => (
+              <div key={pool.mintAddress + '-' + pool.market} className="mb-2 flex items-center justify-between">
+                <span className="text-white">{pool.symbol} ({pool.market})</span>
+                <span className="text-[#34C759]">APY: {pool.apy}%</span>
+                <Button size="sm" onClick={() => {
+                  const amt = prompt(`How much ${pool.symbol} would you like to lend?`)
+                  if (amt && !isNaN(Number(amt))) handleLendingAmount(Number(amt), pool)
+                }}>Lend</Button>
+              </div>
+            ))}
+          </div>
+        )}
+        {showLendingConfirm && selectedPool !== null && (
+          <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4">
+            <h3 className="text-lg font-semibold text-white mb-2">Confirm Lending</h3>
+            <p className="text-white mb-2">You're about to lend <b>{lendingAmount} {selectedPool.symbol}</b> for <b>{selectedPool.apy}%</b> APY on Solend.</p>
+            <p className="text-yellow-400 mb-2">Potential risks: Smart contract risk, market risk.</p>
+            <div className="flex gap-3 mt-4">
+              <Button className="bg-[#34C759] text-white flex-1" onClick={handleLendNow}>Lend Now</Button>
+              <Button variant="outline" className="flex-1 border-[#34C759] text-[#34C759]" onClick={() => setShowLendingConfirm(false)}>Cancel</Button>
             </div>
           </div>
         )}

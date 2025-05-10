@@ -3,8 +3,10 @@
 import { AppSidebar } from "@/components/app-sidebar"
 import { Header } from "@/components/header"
 import { Dashboard } from "@/components/dashboard"
-import { ChatInterface } from "@/components/chat-interface"
 import { useSearchParams } from "next/navigation"
+import dynamic from "next/dynamic"
+
+const ChatInterface = dynamic(() => import("@/components/chat-interface").then(mod => mod.ChatInterface), { ssr: false })
 
 export default function Home() {
   const searchParams = useSearchParams()
