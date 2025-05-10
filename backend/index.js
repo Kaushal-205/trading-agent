@@ -11,8 +11,8 @@ app.use(express.json());
 
 app.post('/api/solend-lend', async (req, res) => {
   try {
-    console.log('req.body', req.body);
-    const { pool, reserve, amount, userPublicKey } = req.body;
+    // console.log('req.body', req.body);
+    const { pool, amount, userPublicKey } = req.body;
     if (!pool || typeof pool !== 'object') return res.status(400).json({ error: 'Missing or invalid pool' });
     // if (!reserve || typeof reserve !== 'object') return res.status(400).json({ error: 'Missing or invalid reserve' });
     if (typeof amount !== 'number' || isNaN(amount) || amount <= 0) return res.status(400).json({ error: 'Missing or invalid amount' });
@@ -24,14 +24,45 @@ app.post('/api/solend-lend', async (req, res) => {
     const amountBN = new BN(amount).mul(new BN(10).pow(decimals));
     const wallet = { publicKey: new PublicKey(userPublicKey) };
 
+    // Construct reserve object with string values as per SDK types
+    // console.log('pool.reserve', pool.reserve);
+    const reserve = {
+      address: pool.reserve.address,
+      liquidityAddress: pool.reserve.liquidity.supplyPubkey,
+      cTokenMint: pool.reserve.collateral.mintPubkey,
+      cTokenLiquidityAddress: pool.reserve.collateral.supplyPubkey,
+      pythOracle: pool.reserve.liquidity.pythOracle,
+      switchboardOracle: pool.reserve.liquidity.switchboardOracle,
+      mintAddress: pool.reserve.liquidity.mintPubkey,
+      liquidityFeeReceiverAddress: pool.reserve.config.feeReceiver
+    }
+
+    const pool_reserve = {
+      address: pool.reserve.address,
+      pythOracle: pool.reserve.liquidity.pythOracle,
+      switchboardOracle: pool.reserve.liquidity.switchboardOracle,
+      mintAddress: pool.reserve.liquidity.mintPubkey,
+      liquidityFeeReceiverAddress: pool.reserve.config.feeReceiver,
+      extraOracle: pool.reserve.config.extraOracle
+    }
+
+    const pool_derived = {
+      address: pool.reserve.lendingMarket,
+      owner: pool.reserve.lendingMarket,
+      name: null,
+      authorityAddress: pool.reserve.lendingMarket,
+      reserves: [pool_reserve],
+    }
+
     const solendAction = await SolendActionCore.buildDepositTxns(
-      pool,
-      pool.reserve,
+      pool_derived,
+      reserve,
       connection,
       amountBN.toString(),
       wallet,
       { environment: 'production' }
     );
+    console.log("after building txns")
     console.log('solendAction', solendAction);
     const versionedTxn = await solendAction.getVersionedTransaction();
     const serialized = Buffer.from(versionedTxn.serialize()).toString('base64');
@@ -46,4 +77,4 @@ app.post('/api/solend-lend', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`Node backend running on port ${PORT}`)); 
+app.listen(PORT, () => console.log(`Node backend running on port ${PORT}`)); 
