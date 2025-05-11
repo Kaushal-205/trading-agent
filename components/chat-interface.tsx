@@ -11,6 +11,7 @@ import { VersionedTransaction } from "@solana/web3.js"
 import { fetchSolendPoolsByMint, SolendPool } from '../lib/solend'
 import { Connection, PublicKey, clusterApiUrl } from '@solana/web3.js'
 import ReactMarkdown from 'react-markdown'
+import config from '../lib/config'
 
 // Import token list
 import tokenList from '../token.json'
@@ -1056,7 +1057,7 @@ export function ChatInterface() {
       if (!selectedPool || !publicKey || !lendingAmount || !sendTransaction) throw new Error('Missing lending info');
       // Call the API route to get the serialized transaction
       console.log('selectedPool', selectedPool);
-      const res = await fetch('http://localhost:4000/api/solend-lend', {
+      const res = await fetch(`${config.apiUrl}/api/solend-lend`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
