@@ -125,6 +125,14 @@ app.post('/api/solend-lend', async (req, res) => {
 //   }
 // });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'Backend is running',
+    timestamp: new Date().toISOString()
+  });
+});
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Node backend running on port ${PORT}`)); 
