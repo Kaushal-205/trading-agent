@@ -1043,7 +1043,10 @@ export function ChatInterface() {
   };
 
   const handleLendNow = async () => {
+    // Hide lending options UI immediately when the user clicks "Lend Now"
     setShowLendingConfirm(false);
+    setSolendPools(null); // Hide the pools UI immediately
+    
     setMessages(prev => [...prev, {
       role: "assistant",
       content: `Lending ${lendingAmount} ${lendingToken?.symbol} at ${selectedPool?.apy}% APY... Please approve the transaction in your wallet.`,
@@ -1081,10 +1084,12 @@ export function ChatInterface() {
         messageId: generateMessageId()
       }]);
     } finally {
+      // Clear all lending-related state
       setLendingAmount(null);
       setSelectedPool(null);
       setSolendPools(null);
       setLendingToken(null);
+      setShowLendingConfirm(false);
     }
   };
 
