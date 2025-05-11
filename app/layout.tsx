@@ -7,6 +7,7 @@ import { SidebarProvider } from "@/components/ui/sidebar"
 import { SolanaWalletProvider } from "@/components/solana/wallet-provider"
 import { WalletAuthProvider } from "@/components/solana/wallet-auth-provider"
 import { Toaster } from "@/components/toaster"
+import { Suspense } from "react"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -30,7 +31,9 @@ export default function RootLayout({
               <WalletAuthProvider>
                 <SidebarProvider>
                   <div className="flex min-h-screen w-full">
-                    {children}
+                    <Suspense fallback={<div>Loading...</div>}>
+                      {children}
+                    </Suspense>
                   </div>
                 </SidebarProvider>
                 <Toaster />

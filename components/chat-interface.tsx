@@ -10,7 +10,7 @@ import { useJupiter } from '@/hooks/useJupiter'
 import { VersionedTransaction } from "@solana/web3.js"
 import { fetchSolendPoolsByMint, SolendPool } from '../lib/solend'
 import { Connection, PublicKey, clusterApiUrl } from '@solana/web3.js'
-import BN from 'bn.js'
+import ReactMarkdown from 'react-markdown'
 
 // Import token list
 import tokenList from '../token.json'
@@ -20,7 +20,7 @@ interface Message {
   content: string
   options?: Array<{
     platform: string
-    type: 'stake' | 'lend' | 'liquidity' | 'buy'
+    type: 'lend' | 'buy'
     apy: number
     riskLevel: "low" | "medium" | "high"
     description: string
@@ -34,6 +34,8 @@ interface Message {
       apy: number
     }[]
   }>
+  // Add messageId for easier reference
+  messageId?: string
 }
 
 interface LLMResponse {
@@ -44,7 +46,6 @@ interface LLMResponse {
   message: string
 }
 
-// Add new interface for onramp quote
 interface OnrampQuote {
   provider: string;
   inputAmount: number;
@@ -62,7 +63,6 @@ interface OnrampQuote {
   redirectUrl?: string;
 }
 
-// Add interface for Jupiter swap quote
 interface SwapQuoteWidget {
   requestId: string;
   inputToken: string;
@@ -101,9 +101,10 @@ interface QuoteWidgetProps {
   quote: OnrampQuote;
   onConfirm: () => void;
   onCancel: () => void;
+  isProcessing?: boolean;
 }
 
-function QuoteWidget({ quote, onConfirm, onCancel }: QuoteWidgetProps) {
+function QuoteWidget({ quote, onConfirm, onCancel, isProcessing = false }: QuoteWidgetProps) {
   return (
     <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4">
       <div className="flex justify-between items-center mb-4">
@@ -136,7 +137,7 @@ function QuoteWidget({ quote, onConfirm, onCancel }: QuoteWidgetProps) {
         </div>
         <div className="flex justify-between">
           <span>Exchange Rate:</span>
-          <span className="text-white">1 {quote.inputCurrency} = {quote.exchangeRate} {quote.outputCurrency}</span>
+          <span className="text-white">1 {quote.inputCurrency} = {quote.exchangeRate.toFixed(6)} {quote.outputCurrency}</span>
         </div>
         <div className="flex justify-between">
           <span>Network:</span>
@@ -151,13 +152,27 @@ function QuoteWidget({ quote, onConfirm, onCancel }: QuoteWidgetProps) {
       <div className="flex gap-3 mt-4">
         <Button
           onClick={onConfirm}
+          disabled={isProcessing}
           className="flex-1 bg-[#34C759] hover:bg-[#2FB350] text-white"
         >
-          <Check className="h-4 w-4 mr-2" />
-          Proceed to Payment
+          {isProcessing ? (
+            <span className="flex items-center">
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Processing...
+            </span>
+          ) : (
+            <>
+              <Check className="h-4 w-4 mr-2" />
+              Proceed to Payment
+            </>
+          )}
         </Button>
         <Button
           onClick={onCancel}
+          disabled={isProcessing}
           variant="outline"
           className="flex-1 border-[#34C759] text-[#34C759] hover:bg-[#34C759] hover:text-white"
         >
@@ -169,14 +184,14 @@ function QuoteWidget({ quote, onConfirm, onCancel }: QuoteWidgetProps) {
   );
 }
 
-// New component for Jupiter swap quote widget
 interface SwapWidgetProps {
   quote: SwapQuoteWidget;
   onConfirm: () => void;
   onCancel: () => void;
+  isProcessing?: boolean;
 }
 
-function SwapWidget({ quote, onConfirm, onCancel }: SwapWidgetProps) {
+function SwapWidget({ quote, onConfirm, onCancel, isProcessing = false }: SwapWidgetProps) {
   return (
     <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4">
       <div className="flex justify-between items-center mb-4">
@@ -212,13 +227,27 @@ function SwapWidget({ quote, onConfirm, onCancel }: SwapWidgetProps) {
       <div className="flex gap-3 mt-4">
         <Button
           onClick={onConfirm}
+          disabled={isProcessing}
           className="flex-1 bg-[#34C759] hover:bg-[#2FB350] text-white"
         >
-          <Check className="h-4 w-4 mr-2" />
-          Approve Swap
+          {isProcessing ? (
+            <span className="flex items-center">
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Processing...
+            </span>
+          ) : (
+            <>
+              <Check className="h-4 w-4 mr-2" />
+              Approve Swap
+            </>
+          )}
         </Button>
         <Button
           onClick={onCancel}
+          disabled={isProcessing}
           variant="outline"
           className="flex-1 border-[#34C759] text-[#34C759] hover:bg-[#34C759] hover:text-white"
         >
@@ -230,19 +259,38 @@ function SwapWidget({ quote, onConfirm, onCancel }: SwapWidgetProps) {
   );
 }
 
-// Add a helper to extract token symbol from user input for yield intent
+// Improved helper to extract token symbol from user input for yield intent
 function extractTokenSymbolFromYieldQuery(query: string): string | null {
-  // Try to match "yield option for usdc", "show me yield for usdc", etc.
-  const match = query.match(/yield(?: option[s]?)?(?: for)? (\w+)/i);
-  if (match) return match[1].toUpperCase();
+  // Try to match various patterns of asking about yield
+  const patterns = [
+    /yield(?: options?)?(?: for)? (\w+)/i,
+    /(\w+) yield/i,
+    /earn(?: on| with)? (\w+)/i,
+    /invest(?: in)? (\w+)/i,
+    /lend(?: my)? (\w+)/i,
+    /deposit(?: my)? (\w+)/i,
+    /stake(?: my)? (\w+)/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = query.match(pattern);
+    if (match) return match[1].toUpperCase();
+  }
+  
   return null;
+}
+
+// Generate a unique ID for each message
+function generateMessageId(): string {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Hello! I can help you buy SOL, buy other tokens, explore yield options, or check your portfolio. What would you like to do?"
+      content: "Hello! I can help you buy SOL, buy other tokens, explore yield options, or check your portfolio. What would you like to do?",
+      messageId: generateMessageId()
     }
   ])
   const [input, setInput] = useState("")
@@ -274,6 +322,7 @@ export function ChatInterface() {
 
   // State for Jupiter swap quote widget
   const [swapQuoteWidget, setSwapQuoteWidget] = useState<SwapQuoteWidget | null>(null)
+  const [isSwapProcessing, setIsSwapProcessing] = useState(false)
 
   // Lending state
   const [solendPools, setSolendPools] = useState<SolendPool[] | null>(null)
@@ -281,8 +330,17 @@ export function ChatInterface() {
   const [lendingAmount, setLendingAmount] = useState<number | null>(null)
   const [selectedPool, setSelectedPool] = useState<SolendPool | null>(null)
   const [showLendingConfirm, setShowLendingConfirm] = useState(false)
+  const [isPendingResponse, setIsPendingResponse] = useState(false)
+  const [passiveIncomeHandlers, setPassiveIncomeHandlers] = useState<{
+    onConfirm: () => void;
+    onDecline: () => void;
+  } | null>(null)
 
-  // Add useEffect to handle URL parameters
+  // Keep track of the message ID that has the passive income prompt
+  const [passiveIncomeMessageId, setPassiveIncomeMessageId] = useState<string | null>(null)
+  const [isPassiveIncomeResponsePending, setIsPassiveIncomeResponsePending] = useState(false)
+
+  // Update the effect to handle URL parameters
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const status = searchParams.get('status');
@@ -290,15 +348,23 @@ export function ChatInterface() {
     if (status === 'success') {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Your SOL purchase was successful! The tokens will be sent to your wallet on Solana Devnet shortly. You can check your wallet balance in a few minutes."
+        content: "Your SOL purchase was successful! The tokens will be sent to your wallet on Solana Devnet shortly. You can check your wallet balance in a few minutes.",
+        messageId: generateMessageId()
       }]);
       handleSuccess();
+      
+      // Offer passive income options for SOL after purchase
+      setTimeout(() => {
+        handlePassiveIncomePrompt("SOL");
+      }, 1000);
+      
       // Clean up the URL
       window.history.replaceState({}, '', '/chat');
     } else if (status === 'cancel') {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Your SOL purchase was cancelled. Would you like to try again?"
+        content: "Your SOL purchase was cancelled. Would you like to try again?",
+        messageId: generateMessageId()
       }]);
       handleCancel();
       // Clean up the URL
@@ -306,23 +372,54 @@ export function ChatInterface() {
     }
   }, [handleSuccess, handleCancel]);
 
-  // Add effect to handle swap result
+  // Updated effect to handle swap result with proper passive income flow
   useEffect(() => {
     if (swapResult) {
       if (swapResult.status === 'Success') {
+        const successMsgId = generateMessageId();
         setMessages(prev => [...prev, {
           role: "assistant",
-          content: `Your token swap was successful! Transaction signature: ${swapResult.signature}`
+          content: `Your token swap was successful! Transaction signature: ${swapResult.signature}`,
+          messageId: successMsgId
         }]);
+        
+        // If this was a token purchase, prompt for passive income options after a short delay
+        if (swapQuoteWidget) {
+          const tokenSymbol = swapQuoteWidget.outputToken;
+          // Save widget data before clearing it
+          const outputToken = swapQuoteWidget.outputToken;
+          
+          // Clear swap data but keep token info for passive income
+          setIsSwapProcessing(false);
+          clearSwapResult();
+          setSwapQuoteWidget(null);
+          
+          // Wait a moment before showing the passive income prompt
+          setTimeout(() => {
+            handlePassiveIncomePrompt(outputToken);
+          }, 1000);
+        }
       } else {
         setMessages(prev => [...prev, {
           role: "assistant",
-          content: `Swap failed: ${swapResult.error || 'Unknown error'}`
+          content: `Swap failed: ${swapResult.error || 'Unknown error'}`,
+          messageId: generateMessageId()
         }]);
+        setIsSwapProcessing(false);
+        clearSwapResult();
+        setSwapQuoteWidget(null);
       }
-      clearSwapResult();
     }
   }, [swapResult, clearSwapResult]);
+
+  // Updated effect to clean up passive income state when not needed
+  useEffect(() => {
+    // Clean up passive income state when no buttons are displayed
+    if (!messages.some(msg => msg.messageId === passiveIncomeMessageId)) {
+      setPassiveIncomeMessageId(null);
+      setPassiveIncomeHandlers(null);
+    }
+  }, [messages, passiveIncomeMessageId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -467,46 +564,58 @@ export function ChatInterface() {
     if (!publicKey) {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Please connect your Solana wallet first to receive your SOL."
+        content: "Please connect your Solana wallet first to receive your SOL.",
+        messageId: generateMessageId()
       }]);
       return;
     }
 
     try {
+      const loadingMsgId = generateMessageId();
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `Getting quote for ${amount} SOL on Solana Devnet...`
+        content: `Getting quote for ${amount} SOL on Solana Devnet...`,
+        messageId: loadingMsgId
       }]);
 
       await getQuote(amount);
       
       if (onrampError) {
-        setMessages(prev => [...prev, {
-          role: "assistant",
-          content: `Error: ${onrampError}`
-        }]);
+        // Replace loading message with error
+        setMessages(prev => prev.map(msg => 
+          msg.messageId === loadingMsgId 
+            ? { ...msg, content: `Error: ${onrampError}` }
+            : msg
+        ));
         return;
       }
 
       if (currentQuote) {
-        setMessages(prev => [...prev, {
-          role: "assistant",
-          content: `I've found a way to buy ${amount} SOL on Solana Devnet. Here are the details:`,
-          options: [{
-            platform: "MoonPay",
-            type: "buy",
-            apy: 0,
-            riskLevel: "low",
-            description: `Buy ${amount} SOL for $${currentQuote.inputAmount} (including fees)`,
-            url: currentQuote.redirectUrl || '',
-            tokenSymbol: "SOL"
-          }]
-        }]);
+        // Replace loading message with quote
+        setMessages(prev => prev.map(msg => 
+          msg.messageId === loadingMsgId 
+            ? { 
+                ...msg, 
+                content: `I've found a way to buy ${amount} SOL on Solana Devnet. Here are the details:`,
+                options: [{
+                  platform: "MoonPay",
+                  type: "buy",
+                  apy: 0,
+                  riskLevel: "low",
+                  description: `Buy ${amount} SOL for $${currentQuote.inputAmount} (including fees)`,
+                  url: currentQuote.redirectUrl || '',
+                  tokenSymbol: "SOL"
+                }]
+              }
+            : msg
+        ));
       } else {
-        setMessages(prev => [...prev, {
-          role: "assistant",
-          content: "Sorry, I couldn't get a quote at this time. Please try again later."
-        }]);
+        // Replace loading message with error
+        setMessages(prev => prev.map(msg => 
+          msg.messageId === loadingMsgId 
+            ? { ...msg, content: "Sorry, I couldn't get a quote at this time. Please try again later." }
+            : msg
+        ));
       }
     } catch (error) {
       console.error('Error in handleBuySol:', error);
@@ -514,7 +623,8 @@ export function ChatInterface() {
         role: "assistant",
         content: error instanceof Error 
           ? `Error: ${error.message}`
-          : "I'm having trouble processing your buy request. Please try again."
+          : "I'm having trouble processing your buy request. Please try again.",
+        messageId: generateMessageId()
       }]);
     }
   };
@@ -524,7 +634,8 @@ export function ChatInterface() {
     if (!publicKey) {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Please connect your Solana wallet first to receive your tokens."
+        content: "Please connect your Solana wallet first to receive your tokens.",
+        messageId: generateMessageId()
       }]);
       return;
     }
@@ -534,25 +645,30 @@ export function ChatInterface() {
     if (!token) {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `Sorry, I couldn't find the token "${tokenName}" in our supported tokens list.`
+        content: `Sorry, I couldn't find the token "${tokenName}" in our supported tokens list.`,
+        messageId: generateMessageId()
       }]);
       return;
     }
 
     try {
+      const loadingMsgId = generateMessageId();
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `Getting quote to buy ${amount} ${token.symbol} with SOL...`
+        content: `Getting quote to buy ${amount} ${token.symbol} with SOL...`,
+        messageId: loadingMsgId
       }]);
 
       // Get Jupiter swap quote using ExactOut mode
       const quote = await getJupiterQuote(token.address, amount);
       
       if (jupiterError) {
-        setMessages(prev => [...prev, {
-          role: "assistant",
-          content: `Error: ${jupiterError}`
-        }]);
+        // Replace loading message with error
+        setMessages(prev => prev.map(msg => 
+          msg.messageId === loadingMsgId 
+            ? { ...msg, content: `Error: ${jupiterError}` }
+            : msg
+        ));
         return;
       }
 
@@ -579,17 +695,19 @@ export function ChatInterface() {
 
         setSwapQuoteWidget(quoteWidget);
 
-        setMessages(prev => [...prev, {
-          role: "assistant",
-          content: `I've found a swap quote to buy ${amount} ${token.symbol}. Would you like to proceed?`
-        }]);
-        // After swap, show lending options for this token
-        setTimeout(() => handleShowLendingOptions(token.symbol, token.address), 2000)
+        // Replace loading message with quote info
+        setMessages(prev => prev.map(msg => 
+          msg.messageId === loadingMsgId 
+            ? { ...msg, content: `I've found a swap quote to buy ${amount} ${token.symbol}. Would you like to proceed?` }
+            : msg
+        ));
       } else {
-        setMessages(prev => [...prev, {
-          role: "assistant",
-          content: "Sorry, I couldn't get a swap quote at this time. Please try again later."
-        }]);
+        // Replace loading message with error
+        setMessages(prev => prev.map(msg => 
+          msg.messageId === loadingMsgId 
+            ? { ...msg, content: "Sorry, I couldn't get a swap quote at this time. Please try again later." }
+            : msg
+        ));
       }
     } catch (error) {
       console.error('Error in handleBuyToken:', error);
@@ -597,7 +715,8 @@ export function ChatInterface() {
         role: "assistant",
         content: error instanceof Error 
           ? `Error: ${error.message}`
-          : "I'm having trouble processing your token swap request. Please try again."
+          : "I'm having trouble processing your token swap request. Please try again.",
+        messageId: generateMessageId()
       }]);
     }
   };
@@ -607,42 +726,118 @@ export function ChatInterface() {
     if (!swapQuoteWidget || !publicKey || !sendTransaction) {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "There was an error with the swap. Please try again."
+        content: "There was an error with the swap. Please try again.",
+        messageId: generateMessageId()
       }]);
       return;
     }
 
+    // List of fallback RPC endpoints (add your preferred endpoint with API key first if you have one)
+    const rpcEndpoints = [
+      'https://api.mainnet-beta.solana.com',
+      'https://rpc.ankr.com/solana',
+      'https://solana-api.projectserum.com'
+    ];
+
     try {
+      setIsSwapProcessing(true);
+      const processingMsgId = generateMessageId();
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Please approve the transaction in your wallet..."
+        content: "Please approve the transaction in your wallet...",
+        messageId: processingMsgId
       }]);
 
-      // Deserialize and sign the transaction
+      // Get a fresh connection to Solana
+      const connection = new Connection(rpcEndpoints[0], {
+        commitment: 'confirmed',
+        wsEndpoint: undefined // Disable WebSocket for this connection
+      });
+      
+      // Deserialize the transaction from Jupiter
       const transaction = VersionedTransaction.deserialize(
         Buffer.from(swapQuoteWidget.transaction, 'base64')
       );
-
-      // Sign the transaction with the user's wallet
-      const connection = new Connection(clusterApiUrl('mainnet-beta'));
+      
+      // Send the transaction directly without serializing/deserializing again
       const signature = await sendTransaction(transaction, connection);
       
-      // Serialize the signed transaction
-      const serializedTransaction = Buffer.from(transaction.serialize()).toString('base64');
+      // Update processing message
+      setMessages(prev => prev.map(msg => 
+        msg.messageId === processingMsgId 
+          ? { ...msg, content: `Transaction submitted with ID: ${signature}. Waiting for confirmation...` }
+          : msg
+      ));
       
-      // Execute the swap
-      await executeSwap(serializedTransaction, swapQuoteWidget.requestId);
+      // Success message without waiting for confirmation since Jupiter has already done the swap
+      setMessages(prev => prev.map(msg => 
+        msg.messageId === processingMsgId 
+          ? { ...msg, content: `Swap successful! The transaction is being processed on the network. [View transaction](https://explorer.solana.com/tx/${signature}?cluster=mainnet-beta)` }
+          : msg
+      ));
       
-      // Clear the quote widget
+      // Store output token before clearing swap info
+      const outputToken = swapQuoteWidget.outputToken;
+      
+      // Clear the swap info
+      setIsSwapProcessing(false);
       setSwapQuoteWidget(null);
+      clearJupiterQuote();
+      
+      // Prompt for passive income directly after clearing swap info
+      // with a slight delay for better UX
+      setTimeout(() => {
+        handlePassiveIncomePrompt(outputToken);
+      }, 1500);
+      
+      // Try to verify transaction in the background with fallback endpoints
+      // but don't block the UI flow
+      setTimeout(async () => {
+        try {
+          // Try each RPC endpoint until one works
+          for (const endpoint of rpcEndpoints) {
+            try {
+              const fallbackConnection = new Connection(endpoint, {
+                commitment: 'confirmed',
+                wsEndpoint: undefined
+              });
+              
+              // Use lower-rate method getTransaction instead of getSignatureStatus
+              const tx = await fallbackConnection.getTransaction(signature, {
+                maxSupportedTransactionVersion: 0
+              });
+              
+              if (tx) {
+                console.log('Transaction confirmed:', signature);
+                
+                // Prompt for passive income after successful swap
+                if (swapQuoteWidget?.outputToken) {
+                  handlePassiveIncomePrompt(swapQuoteWidget.outputToken);
+                }
+                
+                break; // Stop trying endpoints once one succeeds
+              }
+            } catch (endpointError) {
+              console.log(`Endpoint ${endpoint} failed:`, endpointError);
+              // Continue to next endpoint
+            }
+          }
+        } catch (backgroundError) {
+          console.log('Background verification failed:', backgroundError);
+          // This is just background verification so we don't report to the user
+        }
+      }, 3000);
+      
     } catch (error) {
       console.error('Error confirming swap:', error);
       setMessages(prev => [...prev, {
         role: "assistant",
         content: error instanceof Error 
           ? `Error: ${error.message}`
-          : "There was an error confirming your swap. Please try again."
+          : "There was an error confirming your swap. Please try again.",
+        messageId: generateMessageId()
       }]);
+      setIsSwapProcessing(false);
       setSwapQuoteWidget(null);
     }
   };
@@ -653,7 +848,8 @@ export function ChatInterface() {
     setSwapQuoteWidget(null);
     setMessages(prev => [...prev, {
       role: "assistant",
-      content: "Swap cancelled. Would you like to try a different amount?"
+      content: "Swap cancelled. Would you like to try a different amount?",
+      messageId: generateMessageId()
     }]);
   };
 
@@ -662,12 +858,14 @@ export function ChatInterface() {
       confirmPurchase();
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Opening MoonPay payment page. Please complete your purchase there. You'll receive your SOL on Solana Devnet after the payment is processed."
+        content: "Opening MoonPay payment page. Please complete your purchase there. You'll receive your SOL on Solana Devnet after the payment is processed.",
+        messageId: generateMessageId()
       }]);
     } catch (error) {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Sorry, there was an error opening the payment page. Please try again."
+        content: "Sorry, there was an error opening the payment page. Please try again.",
+        messageId: generateMessageId()
       }]);
     }
   };
@@ -676,186 +874,181 @@ export function ChatInterface() {
     cancelPurchase();
     setMessages(prev => [...prev, {
       role: "assistant",
-      content: "Purchase cancelled. Would you like to try a different amount?"
+      content: "Purchase cancelled. Would you like to try a different amount?",
+      messageId: generateMessageId()
     }]);
   };
 
-  // Update handleSend to support 'explore_yield' with token
-  const handleSend = async () => {
-    if (!input.trim()) return
-
-    const userMessage = input
-    setInput("")
-    setMessages(prev => [...prev, { role: "user", content: userMessage }])
-    setIsTyping(true)
-
-    try {
-      const llmResponse = await processLLMResponse(userMessage);
-      
-      // Handle different intents
-      switch (llmResponse.intent) {
-        case "buy_sol":
-          if (llmResponse.amount && llmResponse.amount > 0) {
-            await handleBuySol(llmResponse.amount);
-          } else {
-            setMessages(prev => [...prev, {
-              role: "assistant",
-              content: "Please specify a valid amount of SOL to buy."
-            }]);
-          }
-          break;
-
-        case "buy_token":
-          if (llmResponse.amount && llmResponse.amount > 0 && llmResponse.token) {
-            await handleBuyToken(llmResponse.amount, llmResponse.token);
-          } else {
-            setMessages(prev => [...prev, {
-              role: "assistant",
-              content: "Please specify a valid amount and token to buy."
-            }]);
-          }
-          break;
-
-        case "explore_yield": {
-          // Try to extract token symbol from user message
-          let tokenSymbol = llmResponse.token;
-          if (!tokenSymbol) {
-            tokenSymbol = extractTokenSymbolFromYieldQuery(userMessage) || undefined;
-          }
-          if (tokenSymbol) {
-            // Find token mint from tokenList
-            const token = tokenList.find(t => t.symbol.toUpperCase() === tokenSymbol.toUpperCase());
-            if (token) {
-              setMessages(prev => [...prev, { role: "assistant", content: `Looking up yield options for ${token.symbol}...` }]);
-              const pools = await fetchSolendPoolsByMint(token.address);
-              if (pools.length === 0) {
-                setMessages(prev => [...prev, { role: "assistant", content: `No Solend lending pools found for ${token.symbol}.` }]);
-              } else {
-                setMessages(prev => [...prev, { role: "assistant", content: `Here are Solend lending options for ${token.symbol}:\n` + pools.map(p => `${p.symbol}: ${p.apy}% APY`).join("\n") + "\nHow much would you like to invest?" }]);
-                if (typeof token.symbol === 'string' && typeof token.address === 'string') {
-                  setSolendPools(pools);
-                  setLendingToken({ symbol: token.symbol, mint: token.address });
-                }
-              }
-            } else {
-              setMessages(prev => [...prev, { role: "assistant", content: `Token ${tokenSymbol} not found in supported list.` }]);
-            }
-          } else {
-            setMessages(prev => [...prev, { role: "assistant", content: "Please specify a token to explore yield options for." }]);
-          }
-          break;
-        }
-
-        case "view_portfolio":
-          // TODO: Implement portfolio view logic
-          setMessages(prev => [...prev, {
-            role: "assistant",
-            content: llmResponse.message // Use LLM's message for portfolio view
-          }]);
-          break;
-
-        default:
-          setMessages(prev => [...prev, {
-            role: "assistant",
-            content: llmResponse.message // Directly display LLM's message for out-of-scope
-          }]);
-      }
-    } catch (error) {
+  // Function to handle passive income prompt with proper button setup
+  const handlePassiveIncomePrompt = async (tokenSymbol: string) => {
+    // Find token in the token list to get both symbol and mint
+    const token = findToken(tokenSymbol);
+    if (!token || !token.address) {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "I'm having trouble understanding. Please try again or use the buttons below."
-      }]);
-    } finally {
-      setIsTyping(false)
-    }
-  }
-
-  const handleQuickAction = (action: string) => {
-    setInput(action)
-    handleSend()
-  }
-
-  const handleStake = async (platform: string, amount: number) => {
-    if (!publicKey) {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: "Please connect your wallet first."
+        content: `I couldn't find details for ${tokenSymbol} in our supported tokens list.`,
+        messageId: generateMessageId()
       }]);
       return;
     }
 
+    const promptMsgId = generateMessageId();
+    setMessages(prev => [...prev, {
+      role: "assistant",
+      content: `Would you like to earn passive income with your ${token.symbol}? I can show you some safe lending options.`,
+      messageId: promptMsgId
+    }]);
+    
+    // Create a promise that resolves when user clicks a button
+    return new Promise<boolean>((resolve) => {
+      const handleConfirm = () => {
+        // First remove the passive income handlers to prevent duplicate triggers
+        setPassiveIncomeHandlers(null);
+        
+        // Also clear the passive income message ID to prevent rendering options
+        setPassiveIncomeMessageId(null);
+        
+        // Remove the option buttons by updating the message
+        setMessages(prev => prev.map(msg => 
+          msg.messageId === promptMsgId 
+            ? { ...msg, options: undefined } 
+            : msg
+        ));
+        
+        // Then add user message and resolve
+        setMessages(prev => [
+          ...prev,
+          { 
+            role: "user", 
+            content: "Sure, show me lending options",
+            messageId: generateMessageId()
+          }
+        ]);
+        
+        resolve(true);
+        
+        // Immediately start looking up options with the correct token address
+        console.log('Showing lending options for token:', token.symbol, 'address:', token.address);
+        showLendingOptions(token.symbol, token.address);
+      };
+      
+      const handleDecline = () => {
+        // First remove the passive income handlers to prevent duplicate triggers
+        setPassiveIncomeHandlers(null);
+        
+        // Also clear the passive income message ID to prevent rendering options
+        setPassiveIncomeMessageId(null);
+        
+        // Remove the option buttons by updating the message
+        setMessages(prev => prev.map(msg => 
+          msg.messageId === promptMsgId 
+            ? { ...msg, options: undefined } 
+            : msg
+        ));
+        
+        // Then add user message and resolve
+        setMessages(prev => [
+          ...prev,
+          { 
+            role: "user", 
+            content: "I'm okay, thanks",
+            messageId: generateMessageId()
+          }
+        ]);
+        
+        resolve(false);
+        
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: "No problem! You can always check lending options later by asking me about yield opportunities.",
+          messageId: generateMessageId()
+        }]);
+      };
+      
+      setPassiveIncomeHandlers({ onConfirm: handleConfirm, onDecline: handleDecline });
+      setPassiveIncomeMessageId(promptMsgId);
+      
+      // Add options to the prompt message
+      setMessages(prev => prev.map(msg => 
+        msg.messageId === promptMsgId 
+          ? {
+              ...msg,
+              options: [
+                { platform: "Sure", type: "lend", apy: 0, riskLevel: "low", description: "Show safe lending options", url: "", tokenSymbol: token.symbol },
+                { platform: "I'm okay, thanks", type: "lend", apy: 0, riskLevel: "low", description: "Decline lending options", url: "", tokenSymbol: token.symbol }
+              ]
+            }
+          : msg
+      ));
+    });
+  };
+
+  // Separate function to show lending options
+  const showLendingOptions = async (tokenSymbol: string, tokenMint: string) => {
+    console.log('showLendingOptions called with:', { tokenSymbol, tokenMint });
+    setLendingToken({ symbol: tokenSymbol, mint: tokenMint });
+    const loadingMsgId = generateMessageId();
+    
+    // setMessages(prev => [...prev, {
+    //   role: "assistant",
+    //   content: `Looking up safe lending options for ${tokenSymbol}...`,
+    //   messageId: loadingMsgId
+    // }]);
+    
     try {
-      const response = await fetch('/api/lending-opportunities', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          protocol: platform,
-          action: 'stake',
-          amount,
-          walletAddress: publicKey.toString()
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to process staking request');
+      console.log('Fetching Solend pools for token:', tokenSymbol, 'mint:', tokenMint);
+      const pools = await fetchSolendPoolsByMint(tokenMint);
+      console.log('Fetched pools:', pools);
+      
+      if (pools.length === 0) {
+        console.log('No pools found for token:', tokenSymbol);
+        setMessages(prev => prev.map(msg => 
+          msg.messageId === loadingMsgId 
+            ? { ...msg, content: `No safe lending pools found for ${tokenSymbol} at the moment.` }
+            : msg
+        ));
+        setSolendPools(null);
+        return;
       }
-
-      const result = await response.json();
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: `Successfully initiated staking on ${platform}. Transaction: ${result.txHash}`
-      }]);
+      
+      // Replace loading message with results
+      setMessages(prev => prev.map(msg => 
+        msg.messageId === loadingMsgId 
+          ? { ...msg, content: `I found ${pools.length} lending options for ${tokenSymbol}. You can see them below.` }
+          : msg
+      ));
+      
+      console.log('Setting Solend pools in state:', pools);
+      setSolendPools(pools);
     } catch (error) {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: "Failed to process staking request. Please try again."
-      }]);
+      console.error('Error fetching lending pools:', error);
+      setMessages(prev => prev.map(msg => 
+        msg.messageId === loadingMsgId 
+          ? { ...msg, content: `Sorry, I had trouble finding lending options for ${tokenSymbol}. Please try again later.` }
+          : msg
+      ));
+      setSolendPools(null);
     }
-  }
+  };
 
-  // After a successful token buy, fetch Solend pools for that token
-  const handleShowLendingOptions = async (tokenSymbol: string, tokenMint: string) => {
-    setLendingToken({ symbol: tokenSymbol, mint: tokenMint })
-    setMessages(prev => [...prev, {
-      role: "assistant",
-      content: `Looking up lending options for ${tokenSymbol}...`
-    }])
-    const pools = await fetchSolendPoolsByMint(tokenMint)
-    if (pools.length === 0) {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: `No Solend lending pools found for ${tokenSymbol}.`
-      }])
-      setSolendPools(null)
-      return
-    }
-    setSolendPools(pools)
-    setMessages(prev => [...prev, {
-      role: "assistant",
-      content: `Here are Solend lending options for ${tokenSymbol}:\n` + pools.map(p => `${p.symbol}: ${p.apy}% APY`).join("\n") + "\nHow much would you like to invest?"
-    }])
-  }
-
-  // When user enters amount, show confirmation
   const handleLendingAmount = (amount: number, pool: SolendPool) => {
-    setLendingAmount(amount)
-    setSelectedPool(pool)
-    setShowLendingConfirm(true)
-    setMessages(prev => [...prev, {
-      role: "assistant",
-      content: `You're about to lend ${amount} ${pool.symbol} for ${pool.apy}% APY. Proceed?`
-    }])
-  }
+    setLendingAmount(amount);
+    setSelectedPool(pool);
+    setShowLendingConfirm(true);
+    // setMessages(prev => [...prev, {
+    //   role: "assistant",
+    //   content: `You're about to lend ${amount} ${pool.symbol} for ${pool.apy}% APY. Proceed?`,
+    //   messageId: generateMessageId()
+    // }]);
+  };
 
-  // On confirmation, perform real lending
   const handleLendNow = async () => {
-    setShowLendingConfirm(false)
+    setShowLendingConfirm(false);
     setMessages(prev => [...prev, {
       role: "assistant",
-      content: `Lending ${lendingAmount} ${selectedPool?.symbol} at ${selectedPool?.apy}% APY... Please approve the transaction in your wallet.`
-    }])
+      content: `Lending ${lendingAmount} ${lendingToken?.symbol} at ${selectedPool?.apy}% APY... Please approve the transaction in your wallet.`,
+      messageId: generateMessageId()
+    }]);
     try {
       if (!selectedPool || !publicKey || !lendingAmount || !sendTransaction) throw new Error('Missing lending info');
       // Call the API route to get the serialized transaction
@@ -878,20 +1071,185 @@ export function ChatInterface() {
       const signature = await sendTransaction(transaction, connection);
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `Successfully lent ${lendingAmount} ${selectedPool.symbol} on Solend! Transaction signature: ${signature}. You are now earning ${selectedPool.apy}% APY.`
-      }])
+        content: `Successfully lent ${lendingAmount} ${lendingToken?.symbol} on Solend! Transaction signature: ${signature}. You are now earning ${selectedPool.apy}% APY.`,
+        messageId: generateMessageId()
+      }]);
     } catch (e) {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `Lending failed: ${e instanceof Error ? e.message : 'Unknown error'}`
-      }])
+        content: `Lending failed: ${e instanceof Error ? e.message : 'Unknown error'}`,
+        messageId: generateMessageId()
+      }]);
     } finally {
-      setLendingAmount(null)
-      setSelectedPool(null)
-      setSolendPools(null)
-      setLendingToken(null)
+      setLendingAmount(null);
+      setSelectedPool(null);
+      setSolendPools(null);
+      setLendingToken(null);
     }
-  }
+  };
+
+  const handleQuickAction = (action: string) => {
+    setInput(action);
+    handleSend();
+  };
+
+  const handleSend = async () => {
+    if (!input.trim()) return;
+
+    const userMessage = input;
+    setInput("");
+    setMessages(prev => [...prev, { 
+      role: "user", 
+      content: userMessage,
+      messageId: generateMessageId()
+    }]);
+    setIsTyping(true);
+
+    try {
+      const llmResponse = await processLLMResponse(userMessage);
+      
+      // Handle different intents
+      switch (llmResponse.intent) {
+        case "buy_sol":
+          if (llmResponse.amount && llmResponse.amount > 0) {
+            await handleBuySol(llmResponse.amount);
+          } else {
+            setMessages(prev => [...prev, {
+              role: "assistant",
+              content: "Please specify a valid amount of SOL to buy.",
+              messageId: generateMessageId()
+            }]);
+          }
+          break;
+
+        case "buy_token":
+          if (llmResponse.amount && llmResponse.amount > 0 && llmResponse.token) {
+            await handleBuyToken(llmResponse.amount, llmResponse.token);
+          } else {
+            setMessages(prev => [...prev, {
+              role: "assistant",
+              content: "Please specify a valid amount and token to buy.",
+              messageId: generateMessageId()
+            }]);
+          }
+          break;
+
+        case "explore_yield": {
+          // Try to extract token symbol from user message
+          let tokenSymbol = llmResponse.token;
+          if (!tokenSymbol) {
+            tokenSymbol = extractTokenSymbolFromYieldQuery(userMessage) || undefined;
+          }
+          
+          if (tokenSymbol) {
+            // Find token mint from tokenList
+            const token = tokenList.find(t => t.symbol.toUpperCase() === tokenSymbol.toUpperCase());
+            if (token) {
+              const loadingMsgId = generateMessageId();
+              setMessages(prev => [...prev, { 
+                role: "assistant", 
+                content: `Looking up yield options for ${token.symbol}...`,
+                messageId: loadingMsgId
+              }]);
+              
+              // Use the showLendingOptions function
+              showLendingOptions(token.symbol, token.address);
+            } else {
+              setMessages(prev => [...prev, { 
+                role: "assistant", 
+                content: `Token ${tokenSymbol} not found in supported list.`,
+                messageId: generateMessageId()
+              }]);
+            }
+          } else {
+            // If no specific token is mentioned, show a list of supported tokens
+            setMessages(prev => [...prev, { 
+              role: "assistant", 
+              content: "Which token would you like to explore lending options for? Here are the supported tokens:",
+              messageId: generateMessageId(),
+              options: tokenList.map(token => ({
+                platform: token.symbol,
+                type: "lend",
+                apy: 0,
+                riskLevel: "low",
+                description: `Explore lending options for ${token.symbol}`,
+                url: "",
+                tokenSymbol: token.symbol
+              }))
+            }]);
+          }
+          break;
+        }
+
+        case "view_portfolio":
+          // TODO: Implement portfolio view logic
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: llmResponse.message,
+            messageId: generateMessageId()
+          }]);
+          break;
+
+        default:
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: llmResponse.message,
+            messageId: generateMessageId()
+          }]);
+      }
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "I'm having trouble understanding. Please try again or use the buttons below.",
+        messageId: generateMessageId()
+      }]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const handleLend = async (platform: string, amount: number) => {
+    if (!publicKey) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "Please connect your wallet first.",
+        messageId: generateMessageId()
+      }]);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/lending-opportunities', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          protocol: platform,
+          action: 'lend',
+          amount,
+          walletAddress: publicKey.toString()
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to process lending request');
+      }
+
+      const result = await response.json();
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `Successfully initiated lending on ${platform}. Transaction: ${result.txHash}`,
+        messageId: generateMessageId()
+      }]);
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "Failed to process lending request. Please try again.",
+        messageId: generateMessageId()
+      }]);
+    }
+  };
 
   if (!connected) {
     return (
@@ -926,50 +1284,99 @@ export function ChatInterface() {
                   : "bg-[#252C3B] text-white"
               )}
             >
-              <p>{message.content}</p>
-              {message.options && (
-                <div className="mt-4 space-y-3">
-                  {message.options.map((option, i) => (
-                    <div
-                      key={i}
-                      className="bg-[#1E2533] rounded-lg p-3 border border-[#34C759]"
+              <ReactMarkdown
+                components={{
+                  a: ({ node, ...props }) => (
+                    <a 
+                      {...props} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-[#34C759] hover:underline"
+                    />
+                  )
+                }}
+              >
+                {message.content}
+              </ReactMarkdown>
+              {/* Render simple buttons for passive income prompt */}
+              {message.options &&
+                message.options.length === 2 &&
+                message.options[0].platform === "Sure" &&
+                message.options[1].platform === "I'm okay, thanks" &&
+                message.messageId === passiveIncomeMessageId && 
+                passiveIncomeHandlers ? (
+                  <div className="flex gap-3 mt-4">
+                    <Button
+                      className="bg-[#34C759] hover:bg-[#2FB350] text-white flex-1"
+                      onClick={passiveIncomeHandlers.onConfirm}
                     >
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="font-semibold">{option.platform}</span>
-                        <span className="text-[#34C759] text-lg font-bold">
-                          {option.apy}%
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-400 mb-2">{option.description}</p>
-                      <div className="flex justify-between items-center">
-                        <span className={cn(
-                          "text-sm",
-                          option.riskLevel === "low" && "text-green-400",
-                          option.riskLevel === "medium" && "text-yellow-400",
-                          option.riskLevel === "high" && "text-red-400"
-                        )}>
-                          {option.riskLevel.charAt(0).toUpperCase() + option.riskLevel.slice(1)} Risk
-                        </span>
-                        {option.type === 'buy' ? (
-                          <Button 
-                            className="bg-[#34C759] hover:bg-[#2FB350] text-white text-sm"
-                            onClick={() => window.open(option.url, '_blank')}
-                          >
-                            Proceed to Buy
-                          </Button>
-                        ) : (
-                          <Button 
-                            className="bg-[#34C759] hover:bg-[#2FB350] text-white text-sm"
-                            onClick={() => handleStake(option.platform, 1)}
-                          >
-                            Stake Now
-                          </Button>
-                        )}
-                      </div>
+                      Sure
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="border-[#34C759] text-[#34C759] flex-1"
+                      onClick={passiveIncomeHandlers.onDecline}
+                    >
+                      I'm okay, thanks
+                    </Button>
+                  </div>
+                ) : (
+                  message.options && (
+                    <div className="mt-4 space-y-3">
+                      {message.options.map((option, i) => (
+                        <div
+                          key={i}
+                          className="bg-[#1E2533] rounded-lg p-3 border border-[#34C759]"
+                        >
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-semibold">{option.platform}</span>
+                            <span className="text-[#34C759] text-lg font-bold">
+                              {option.apy}%
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-400 mb-2">{option.description}</p>
+                          <div className="flex justify-between items-center">
+                            <span className={cn(
+                              "text-sm",
+                              option.riskLevel === "low" && "text-green-400",
+                              option.riskLevel === "medium" && "text-yellow-400",
+                              option.riskLevel === "high" && "text-red-400"
+                            )}>
+                              {option.riskLevel.charAt(0).toUpperCase() + option.riskLevel.slice(1)} Risk
+                            </span>
+                            {option.type === 'buy' ? (
+                              <Button 
+                                className="bg-[#34C759] hover:bg-[#2FB350] text-white text-sm"
+                                onClick={() => window.open(option.url, '_blank')}
+                              >
+                                Proceed to Buy
+                              </Button>
+                            ) : option.platform === option.tokenSymbol ? (
+                              <Button 
+                                className="bg-[#34C759] hover:bg-[#2FB350] text-white text-sm"
+                                onClick={() => {
+                                  const token = tokenList.find(t => t.symbol === option.tokenSymbol);
+                                  if (token) {
+                                    showLendingOptions(token.symbol, token.address);
+                                  }
+                                }}
+                              >
+                                Explore
+                              </Button>
+                            ) : (
+                              <Button 
+                                className="bg-[#34C759] hover:bg-[#2FB350] text-white text-sm"
+                                onClick={() => handleLend(option.platform, 1)}
+                              >
+                                Lend Now
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
+                  )
+                )}
             </div>
           </div>
         ))}
@@ -996,27 +1403,110 @@ export function ChatInterface() {
           </div>
         )}
         {solendPools && !showLendingConfirm && (
-          <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4">
-            <h3 className="text-lg font-semibold text-white mb-2">Solend Lending Options for {lendingToken?.symbol}</h3>
-            {solendPools.map(pool => (
-              <div key={pool.mintAddress + '-' + pool.market} className="mb-2 flex items-center justify-between">
-                <span className="text-white">{pool.symbol} ({pool.market})</span>
-                <span className="text-[#34C759]">APY: {pool.apy}%</span>
-                <Button size="sm" onClick={() => {
-                  const amt = prompt(`How much ${pool.symbol} would you like to lend?`)
-                  if (amt && !isNaN(Number(amt))) handleLendingAmount(Number(amt), pool)
-                }}>Lend</Button>
+          <div className="flex justify-start w-full">
+            <div className="bg-[#1E2533] rounded-lg p-6 border border-[#34C759] mt-4 w-full max-w-[600px] shadow-lg">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-semibold text-white">Lending Options for {lendingToken?.symbol}</h3>
               </div>
-            ))}
+              <div className="space-y-4">
+                {solendPools.length > 0 ? (
+                  solendPools.map((pool, index) => (
+                    <div key={pool.mintAddress + '-' + pool.market} 
+                         className="flex items-center justify-between p-4 bg-[#252C3B] rounded-lg hover:bg-[#2C3444] transition-colors duration-200">
+                      <div className="flex items-center space-x-4">
+                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-[#1E2533] text-[#34C759] font-bold">
+                          {index + 1}
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-white font-medium text-lg">{lendingToken?.symbol}</span>
+                            <span className={cn(
+                              "text-xs px-2 py-1 rounded-full font-medium",
+                              pool.riskLevel === 'low' && "bg-green-900/50 text-green-400",
+                              pool.riskLevel === 'moderate' && "bg-yellow-900/50 text-yellow-400",
+                              pool.riskLevel === 'high' && "bg-red-900/50 text-red-400"
+                            )}>
+                              {pool.riskLevel.charAt(0).toUpperCase() + pool.riskLevel.slice(1)} Risk
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-400 mt-1">
+                            Market: {pool.market.slice(0, 6)}...{pool.market.slice(-4)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-6">
+                        <div className="text-right">
+                          <div className="text-[#34C759] font-bold text-xl">{pool.apy.toFixed(2)}%</div>
+                          <div className="text-sm text-gray-400">APY</div>
+                        </div>
+                        <Button 
+                          size="sm" 
+                          className="bg-[#34C759] hover:bg-[#2FB350] text-white px-4 py-2 rounded-lg transition-colors duration-200"
+                          onClick={() => {
+                            setLendingAmount(null);
+                            setSelectedPool(pool);
+                            setShowLendingConfirm(true);
+                          }}
+                        >
+                          Lend
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="text-gray-400 mb-2">No lending options available at the moment.</div>
+                    <div className="text-sm text-gray-500">Please try again later or check other tokens.</div>
+                  </div>
+                )}
+              </div>
+              <div className="mt-6 pt-4 border-t border-[#252C3B]">
+                <div className="grid grid-cols-3 gap-4 text-sm text-gray-400">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 rounded-full bg-green-400"></div>
+                    <span>Low Risk: 0-5% APY</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
+                    <span>Moderate Risk: 5-15% APY</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 rounded-full bg-red-400"></div>
+                    <span>High Risk: 15-30% APY</span>
+                  </div>
+                </div>
+                <div className="mt-4 text-xs text-gray-500 text-center">
+                  * APY rates are subject to change based on market conditions
+                </div>
+              </div>
+            </div>
           </div>
         )}
         {showLendingConfirm && selectedPool !== null && (
-          <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4">
+          <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4 max-w-[400px]">
             <h3 className="text-lg font-semibold text-white mb-2">Confirm Lending</h3>
-            <p className="text-white mb-2">You're about to lend <b>{lendingAmount} {selectedPool.symbol}</b> for <b>{selectedPool.apy}%</b> APY on Solend.</p>
-            <p className="text-yellow-400 mb-2">Potential risks: Smart contract risk, market risk.</p>
+            <p className="text-white mb-2">You're about to lend <b>{lendingToken?.symbol}</b> for <b>{selectedPool.apy}%</b> APY on Solend.</p>
+            <div className="mb-4">
+              <label className="block text-gray-300 mb-1" htmlFor="lending-amount">Amount to Lend</label>
+              <input
+                id="lending-amount"
+                type="number"
+                min="0"
+                step="any"
+                value={lendingAmount === null ? '' : lendingAmount}
+                onChange={e => setLendingAmount(e.target.value === '' ? null : Number(e.target.value))}
+                className="w-full px-3 py-2 rounded bg-[#252C3B] border border-[#34C759] text-white focus:outline-none focus:ring-2 focus:ring-[#34C759]"
+                placeholder={`Enter amount of ${lendingToken?.symbol}`}
+              />
+            </div>
             <div className="flex gap-3 mt-4">
-              <Button className="bg-[#34C759] text-white flex-1" onClick={handleLendNow}>Lend Now</Button>
+              <Button
+                className="bg-[#34C759] text-white flex-1"
+                onClick={handleLendNow}
+                disabled={lendingAmount === null || isNaN(lendingAmount) || lendingAmount <= 0}
+              >
+                Lend Now
+              </Button>
               <Button variant="outline" className="flex-1 border-[#34C759] text-[#34C759]" onClick={() => setShowLendingConfirm(false)}>Cancel</Button>
             </div>
           </div>
@@ -1055,9 +1545,9 @@ export function ChatInterface() {
           <Button
             variant="outline"
             className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
-            onClick={() => handleQuickAction("Show me yield options")}
+            onClick={() => handleQuickAction("Show me lending options for USDC")}
           >
-            Explore Yield Options
+            Explore Lending Options
           </Button>
           <Button
             variant="outline"
