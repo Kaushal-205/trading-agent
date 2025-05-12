@@ -1,28 +1,29 @@
 "use client"
 
-import { ThemeToggle } from "@/components/theme-toggle"
+import { ReactNode } from "react"
 import { WalletConnectButton } from "@/components/wallet-connect-button"
 
-export function Header() {
+interface HeaderProps {
+  title: string
+  subtitle?: string
+  rightContent?: ReactNode
+}
+
+export function Header({ title, subtitle, rightContent }: HeaderProps) {
   return (
-    <header className="border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center justify-between px-4 md:px-6">
-        <div className="flex items-center gap-2 md:hidden">
-          {/* Mobile logo */}
-          <div className="h-8 w-8 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center justify-center">
-            <span className="font-bold text-black">YA</span>
-          </div>
+    <div className="p-4 border-b border-border">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-xl font-semibold">{title}</h1>
+          {subtitle && <p className="text-muted-foreground text-sm mt-1">{subtitle}</p>}
         </div>
-
-        <div className="flex-1" />
-
-        <div className="flex items-center gap-4">
-          <div className="hidden md:flex">
-            <ThemeToggle />
-          </div>
+        
+        <div className="flex-shrink-0 flex items-center gap-3">
+          {rightContent}
           <WalletConnectButton />
         </div>
       </div>
-    </header>
+    </div>
   )
 }
+

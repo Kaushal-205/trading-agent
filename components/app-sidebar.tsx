@@ -19,16 +19,16 @@ export function AppSidebar() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const currentTab = searchParams.get("tab")
+  const currentTab = searchParams.get('tab')
 
   const menuItems = [
     { icon: Home, label: "Home", href: "/" },
     { icon: BarChart3, label: "Dashboard", href: "/?tab=dashboard" },
-    { icon: Wallet, label: "Portfolio", href: "#" },
-    { icon: Layers, label: "Yield Options", href: "#" },
-    { icon: History, label: "Transaction History", href: "#" },
-    { icon: Settings, label: "Settings", href: "#" },
-    { icon: HelpCircle, label: "Help", href: "#" },
+    { icon: Wallet, label: "Portfolio", href: "/?tab=portfolio" },
+    { icon: Layers, label: "Yield Options", href: "/?tab=yield-options" },
+    { icon: History, label: "Transaction History", href: "/?tab=history" },
+    { icon: Settings, label: "Settings", href: "/?tab=settings" },
+    { icon: HelpCircle, label: "Help", href: "/?tab=help" },
   ]
 
   const handleLogoClick = () => {
@@ -37,6 +37,31 @@ export function AppSidebar() {
 
   const handleNavigation = (href: string) => {
     router.push(href)
+  }
+
+  const isActive = (label: string): boolean => {
+    if (label === "Home" && !currentTab && pathname === "/") {
+      return true
+    }
+    if (label === "Dashboard" && currentTab === "dashboard") {
+      return true
+    }
+    if (label === "Portfolio" && currentTab === "portfolio") {
+      return true
+    }
+    if (label === "Yield Options" && currentTab === "yield-options") {
+      return true
+    }
+    if (label === "Transaction History" && currentTab === "history") {
+      return true
+    }
+    if (label === "Settings" && currentTab === "settings") {
+      return true
+    }
+    if (label === "Help" && currentTab === "help") {
+      return true
+    }
+    return false
   }
 
   return (
@@ -63,16 +88,13 @@ export function AppSidebar() {
             <SidebarMenuItem key={item.label}>
               <SidebarMenuButton 
                 asChild 
-                isActive={
-                  (item.label === "Home" && !currentTab) || 
-                  (item.label === "Dashboard" && currentTab === "dashboard")
-                }
+                isActive={isActive(item.label)}
               >
                 <button 
                   onClick={() => handleNavigation(item.href)}
                   className="flex items-center w-full"
                 >
-                  <item.icon className="mr-2" />
+                  <item.icon className="mr-2 h-4 w-4" />
                   <span>{item.label}</span>
                 </button>
               </SidebarMenuButton>

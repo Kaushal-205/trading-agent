@@ -25,7 +25,7 @@ export function WalletConnectButton() {
       if (success) {
         toast({
           title: "Authentication successful",
-          description: "You are now authenticated with your Privy wallet.",
+          description: "You are now connected with your Privy wallet.",
           variant: "default",
         })
       } else if (authError) {

@@ -1,17 +1,16 @@
-import { AppSidebar } from "@/components/app-sidebar"
-import { Header } from "@/components/header"
+"use client"
+
+import { useSearchParams } from "next/navigation"
 import { HomeContent } from "./home-content"
+import { Dashboard } from "@/components/dashboard"
 
 export default function Home() {
+  const searchParams = useSearchParams()
+  const tab = searchParams.get('tab')
+
   return (
-    <div className="flex w-full min-h-screen bg-background">
-      <AppSidebar />
-      <div className="flex flex-col flex-1 w-full">
-        <Header />
-        <main className="flex-1 w-full overflow-auto p-4 md:p-6">
-          <HomeContent />
-        </main>
-      </div>
-    </div>
+    <main className="flex flex-1 flex-col h-screen overflow-auto">
+      {tab === "dashboard" ? <Dashboard /> : <HomeContent />}
+    </main>
   )
 }
