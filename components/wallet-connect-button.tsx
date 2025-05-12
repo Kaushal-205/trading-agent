@@ -1,11 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { useWallet } from "@solana/wallet-adapter-react"
-import { useWalletModal } from "@solana/wallet-adapter-react-ui"
 import { Button } from "@/components/ui/button"
-import { Loader2, Wallet, LogOut, CheckCircle } from "lucide-react"
-import { useWalletAuth } from "@/components/solana/wallet-auth-provider"
+import { Loader2, Wallet, LogOut, CheckCircle, Copy, ExternalLink } from "lucide-react"
+import { usePrivyAuth } from "@/components/privy/privy-auth-provider"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,18 +15,8 @@ import { toast } from "@/components/ui/use-toast"
 import { ToastAction } from "@/components/ui/toast"
 
 export function WalletConnectButton() {
-  const { publicKey, disconnect } = useWallet()
-  const { setVisible } = useWalletModal()
-  const { isAuthenticated, isAuthenticating, authenticate, logout, authError, shortAddress } = useWalletAuth()
+  const { isAuthenticated, isAuthenticating, authenticate, logout, authError, walletAddress, shortAddress } = usePrivyAuth()
   const [isAuthenticatingLocal, setIsAuthenticatingLocal] = useState(false)
-
-  const handleConnect = () => {
-    setVisible(true)
-  }
-
-  const handleDisconnect = () => {
-    disconnect()
-  }
 
   const handleAuthenticate = async () => {
     setIsAuthenticatingLocal(true)
@@ -37,7 +25,7 @@ export function WalletConnectButton() {
       if (success) {
         toast({
           title: "Authentication successful",
-          description: "You are now authenticated with your Solana wallet.",
+          description: "You are now authenticated with your Privy wallet.",
           variant: "default",
         })
       } else if (authError) {
@@ -65,61 +53,21 @@ export function WalletConnectButton() {
     })
   }
 
-  // Not connected
-  if (!publicKey) {
-    return (
-      <Button
-        onClick={handleConnect}
-        className="gap-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600"
-      >
-        <Wallet className="h-4 w-4" />
-        Connect Wallet
-      </Button>
-    )
-  }
-
-  // Connected but not authenticated
+  // Not authenticated
   if (!isAuthenticated) {
     return (
-      <div className="flex gap-2">
-        <Button
-          onClick={handleAuthenticate}
-          disabled={isAuthenticating || isAuthenticatingLocal}
-          className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
-        >
-          {isAuthenticating || isAuthenticatingLocal ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <CheckCircle className="h-4 w-4" />
-          )}
-          Authenticate
-        </Button>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <Wallet className="h-4 w-4" />
-              <span>{shortAddress}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => navigator.clipboard.writeText(publicKey.toString())}>
-              Copy Address
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() =>
-                window.open(`https://explorer.solana.com/address/${publicKey.toString()}?cluster=devnet`, "_blank")
-              }
-            >
-              View on Explorer
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleDisconnect} className="text-destructive focus:text-destructive">
-              Disconnect
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      <Button
+        onClick={handleAuthenticate}
+        disabled={isAuthenticating || isAuthenticatingLocal}
+        className="gap-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600"
+      >
+        {isAuthenticating || isAuthenticatingLocal ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Wallet className="h-4 w-4" />
+        )}
+        {isAuthenticating || isAuthenticatingLocal ? "Connecting..." : "Connect Wallet"}
+      </Button>
     )
   }
 
@@ -133,24 +81,24 @@ export function WalletConnectButton() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => navigator.clipboard.writeText(publicKey.toString())}>
+        <DropdownMenuItem onClick={() => navigator.clipboard.writeText(walletAddress || "")}>
+          <Copy className="mr-2 h-4 w-4" />
           Copy Address
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() =>
-            window.open(`https://explorer.solana.com/address/${publicKey.toString()}?cluster=devnet`, "_blank")
-          }
-        >
-          View on Explorer
-        </DropdownMenuItem>
+        {walletAddress && (
+          <DropdownMenuItem
+            onClick={() =>
+              window.open(`https://explorer.solana.com/address/${walletAddress}?cluster=mainnet-beta`, "_blank")
+            }
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            View on Explorer
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleLogout} className="gap-2">
-          <LogOut className="h-4 w-4" />
+        <DropdownMenuItem onClick={handleLogout} className="gap-2 text-red-500">
+          <LogOut className="mr-2 h-4 w-4" />
           <span>Logout</span>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleDisconnect} className="text-destructive focus:text-destructive">
-          Disconnect Wallet
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

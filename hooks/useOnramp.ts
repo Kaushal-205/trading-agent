@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
+import { usePrivyAuth } from '@/components/privy/privy-auth-provider';
 
 interface OnrampQuote {
   provider: string;
@@ -34,12 +35,16 @@ const MOONPAY_WIDGET_URL = 'https://buy-sandbox.moonpay.com';
 
 export function useOnramp(): UseOnrampReturn {
   const { publicKey } = useWallet();
+  const { isAuthenticated, walletAddress } = usePrivyAuth();
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentQuote, setCurrentQuote] = useState<OnrampQuote | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const getQuote = async (amount: number) => {
-    if (!publicKey) {
+    // Check for either Solana wallet adapter or Privy wallet
+    const userAddress = publicKey?.toString() || walletAddress;
+    
+    if (!userAddress) {
       setError('Please connect your wallet first');
       return;
     }
@@ -65,7 +70,7 @@ export function useOnramp(): UseOnrampReturn {
       const moonpayUrl = new URL(MOONPAY_WIDGET_URL);
       moonpayUrl.searchParams.append('apiKey', process.env.NEXT_PUBLIC_MOONPAY_PUBLISHABLE_KEY || '');
       moonpayUrl.searchParams.append('currencyCode', 'sol');
-      moonpayUrl.searchParams.append('walletAddress', publicKey.toString());
+      moonpayUrl.searchParams.append('walletAddress', userAddress);
       moonpayUrl.searchParams.append('baseCurrencyAmount', amount.toString());
       moonpayUrl.searchParams.append('baseCurrencyCode', 'usd');
       moonpayUrl.searchParams.append('redirectURL', `${window.location.origin}/chat?status=success`);

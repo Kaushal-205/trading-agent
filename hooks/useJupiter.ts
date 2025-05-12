@@ -1,6 +1,6 @@
 import { useState } from 'react';
+import { usePrivyAuth } from '@/components/privy/privy-auth-provider';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { PublicKey, VersionedTransaction } from '@solana/web3.js';
 
 // SOL token mint address
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
@@ -8,7 +8,21 @@ const SOL_MINT = 'So11111111111111111111111111111111111111112';
 // Jupiter API base URL
 const JUPITER_API_BASE = 'https://lite-api.jup.ag/ultra/v1';
 
-interface SwapQuote {
+interface RouteInfo {
+  swapInfo: {
+    ammKey: string;
+    label: string;
+    inputMint: string;
+    outputMint: string;
+    inAmount: string;
+    outAmount: string;
+    feeAmount: string;
+    feeMint: string;
+  };
+  percent: number;
+}
+
+interface OrderResponse {
   requestId: string;
   inAmount: string;
   outAmount: string;
@@ -16,23 +30,11 @@ interface SwapQuote {
   swapMode: string;
   slippageBps: number;
   priceImpactPct: string;
-  routePlan: Array<{
-    swapInfo: {
-      ammKey: string;
-      label: string;
-      inputMint: string;
-      outputMint: string;
-      inAmount: string;
-      outAmount: string;
-      feeAmount: string;
-      feeMint: string;
-    };
-    percent: number;
-  }>;
+  routePlan: RouteInfo[];
   inputMint: string;
   outputMint: string;
-  transaction?: string;
   swapType: string;
+  transaction: string;
 }
 
 interface SwapResult {
@@ -46,24 +48,28 @@ interface SwapResult {
 
 interface UseJupiterReturn {
   isLoading: boolean;
-  currentQuote: SwapQuote | null;
+  orderResponse: OrderResponse | null;
   swapResult: SwapResult | null;
   error: string | null;
-  getQuote: (outputMint: string, amount: number) => Promise<SwapQuote | null>;
-  executeSwap: (signedTransaction: string, requestId: string) => Promise<SwapResult | null>;
-  clearQuote: () => void;
+  getOrder: (outputMint: string, amount: number) => Promise<OrderResponse | null>;
+  executeSwap: (signedTransaction: string) => Promise<SwapResult | null>;
+  clearOrder: () => void;
   clearResult: () => void;
 }
 
 export function useJupiter(): UseJupiterReturn {
-  const { publicKey, signTransaction } = useWallet();
+  const { isAuthenticated, walletAddress } = usePrivyAuth();
+  const { publicKey } = useWallet();
   const [isLoading, setIsLoading] = useState(false);
-  const [currentQuote, setCurrentQuote] = useState<SwapQuote | null>(null);
+  const [orderResponse, setOrderResponse] = useState<OrderResponse | null>(null);
   const [swapResult, setSwapResult] = useState<SwapResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const getQuote = async (outputMint: string, amount: number): Promise<SwapQuote | null> => {
-    if (!publicKey) {
+  // Get order directly with transaction included
+  const getOrder = async (outputMint: string, amount: number): Promise<OrderResponse | null> => {
+    const userAddress = walletAddress || publicKey?.toString();
+
+    if (!userAddress) {
       setError('Please connect your wallet first');
       return null;
     }
@@ -71,11 +77,9 @@ export function useJupiter(): UseJupiterReturn {
     setIsLoading(true);
     setError(null);
 
-    //TODO: get token decimals from the token data
     try {
-      // Find token decimals, would be better to get this from the token data
-      // For now using default values based on the token
-      let outputDecimals = 6; // Default for most tokens like USDC, BTC
+      // Find token decimals based on the token
+      let outputDecimals = 6; // Default for most tokens like USDC
       if (outputMint === 'sctmXxs6Mh9SepYstbVmGzA5saD3GrMLpJ55uTVBVtY'){
         outputDecimals = 9; // For TRUMP
       } else if (outputMint === 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263') {
@@ -87,73 +91,107 @@ export function useJupiter(): UseJupiterReturn {
       // Convert the requested output amount to the appropriate decimal representation
       const rawAmount = Math.floor(amount * Math.pow(10, outputDecimals));
       
-      // Create URL for Jupiter API with ExactOut mode
-      const url = new URL(`${JUPITER_API_BASE}/order`);
+      // Call directly to /order endpoint with query parameters
+      const orderUrl = new URL(`${JUPITER_API_BASE}/order`);
       
       // Add query parameters for ExactOut swap mode
-      url.searchParams.append('inputMint', SOL_MINT);
-      url.searchParams.append('outputMint', outputMint);
-      url.searchParams.append('amount', rawAmount.toString());
-      url.searchParams.append('taker', publicKey.toString());
-      url.searchParams.append('slippageBps', '100'); // 1% slippage
-      url.searchParams.append('swapMode', 'ExactOut'); // Specify we want exact output amount
+      orderUrl.searchParams.append('inputMint', SOL_MINT);
+      orderUrl.searchParams.append('outputMint', outputMint);
+      orderUrl.searchParams.append('amount', rawAmount.toString());
+      orderUrl.searchParams.append('slippageBps', '100'); // 1% slippage
+      orderUrl.searchParams.append('swapMode', 'ExactOut'); // Specify we want exact output amount
+      orderUrl.searchParams.append('taker', userAddress);
       
-      console.log("Jupiter API request URL:", url.toString());
+      console.log("Jupiter API order URL:", orderUrl.toString());
       
-      // Fetch quote from Jupiter API
-      const response = await fetch(url.toString());
+      const orderResponse = await fetch(orderUrl.toString());
       
-      if (!response.ok) {
-        throw new Error(`Jupiter API error: ${response.status} ${response.statusText}`);
+      if (!orderResponse.ok) {
+        const errorText = await orderResponse.text();
+        console.error("Jupiter API order error:", errorText);
+        throw new Error(`Jupiter API order error: ${orderResponse.status} ${orderResponse.statusText}`);
       }
       
-      const quote = await response.json();
-      console.log("Jupiter API response:", quote);
-      setCurrentQuote(quote);
-      return quote;
+      const orderResult: OrderResponse = await orderResponse.json();
+      console.log("Jupiter API order response:", orderResult);
+      
+      setOrderResponse(orderResult);
+      return orderResult;
     } catch (error) {
-      console.error('Error fetching quote:', error);
-      setError(error instanceof Error ? error.message : 'Failed to get quote');
+      console.error('Error getting order:', error);
+      setError(error instanceof Error ? error.message : 'Failed to get order');
       return null;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const executeSwap = async (signedTransaction: string, requestId: string): Promise<SwapResult | null> => {
+  // Execute the order after the user has signed the transaction
+  const executeSwap = async (signedTransaction: string): Promise<SwapResult | null> => {
+    if (!orderResponse) {
+      setError('No order available. Please get an order first.');
+      return null;
+    }
+
     setIsLoading(true);
     setError(null);
     
     try {
-      const response = await fetch(`${JUPITER_API_BASE}/execute`, {
+      // Call the execute endpoint with the signed transaction
+      const executeUrl = new URL(`${JUPITER_API_BASE}/execute`);
+      
+      const executeData = {
+        signedTransaction: signedTransaction,
+        requestId: orderResponse.requestId
+      };
+      
+      console.log("Jupiter API execute request:", JSON.stringify(executeData, null, 2));
+      
+      const executeResponse = await fetch(executeUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          signedTransaction,
-          requestId,
-        }),
+        body: JSON.stringify(executeData)
       });
       
-      if (!response.ok) {
-        throw new Error(`Jupiter API error: ${response.status} ${response.statusText}`);
+      if (!executeResponse.ok) {
+        const errorText = await executeResponse.text();
+        console.error("Jupiter API execute error response:", errorText);
+        throw new Error(`Jupiter API execute error: ${executeResponse.status} ${executeResponse.statusText}`);
       }
       
-      const result = await response.json();
+      const executeResult = await executeResponse.json();
+      console.log("Jupiter API execute response:", executeResult);
+      
+      const result: SwapResult = {
+        status: executeResult.status || 'Success',
+        signature: executeResult.signature, // Use the signature from the execute response
+        inputAmountResult: executeResult.inputAmountResult,
+        outputAmountResult: executeResult.outputAmountResult
+      };
+      
       setSwapResult(result);
       return result;
     } catch (error) {
       console.error('Error executing swap:', error);
       setError(error instanceof Error ? error.message : 'Failed to execute swap');
-      return null;
+      
+      // Even on error, we still want to return a result object
+      const errorResult: SwapResult = {
+        status: 'Error',
+        error: error instanceof Error ? error.message : 'Failed to execute swap'
+      };
+      
+      setSwapResult(errorResult);
+      return errorResult;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const clearQuote = () => {
-    setCurrentQuote(null);
+  const clearOrder = () => {
+    setOrderResponse(null);
     setError(null);
   };
 
@@ -164,12 +202,12 @@ export function useJupiter(): UseJupiterReturn {
 
   return {
     isLoading,
-    currentQuote,
+    orderResponse,
     swapResult,
     error,
-    getQuote,
+    getOrder,
     executeSwap,
-    clearQuote,
+    clearOrder,
     clearResult,
   };
 } 
