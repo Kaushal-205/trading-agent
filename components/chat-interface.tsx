@@ -319,7 +319,8 @@ export function ChatInterface() {
     confirmPurchase,
     cancelPurchase,
     handleSuccess,
-    handleCancel
+    handleCancel,
+    proceedToCheckout
   } = useOnramp()
 
   // Add Jupiter hook
@@ -440,12 +441,14 @@ export function ChatInterface() {
   }, [messages, passiveIncomeMessageId]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
   }
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages])
+  }, [messages, isTyping, currentQuote, swapQuoteWidget, solendPools, showLendingConfirm])
 
   const processLLMResponse = async (userMessage: string): Promise<LLMResponse> => {
     const apiKey = process.env.NEXT_PUBLIC_TOGETHER_API_KEY;
@@ -594,56 +597,26 @@ export function ChatInterface() {
       const loadingMsgId = generateMessageId();
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `Getting quote for ${amount} SOL on Solana Devnet...`,
+        content: `Opening payment page to purchase 0.1 SOL on Solana Devnet...`,
         messageId: loadingMsgId
       }]);
 
-      await getQuote(amount);
+      // Skip quote fetching and directly proceed to checkout
+      await proceedToCheckout();
       
-      if (onrampError) {
-        // Replace loading message with error
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === loadingMsgId 
-            ? { ...msg, content: `Error: ${onrampError}` }
-            : msg
-        ));
-        return;
-      }
-
-      if (currentQuote) {
-        // Replace loading message with quote
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === loadingMsgId 
-            ? { 
-                ...msg, 
-                content: `I've found a way to buy ${amount} SOL on Solana Devnet. Here are the details:`,
-                options: [{
-                  platform: "MoonPay",
-                  type: "buy",
-                  apy: 0,
-                  riskLevel: "low",
-                  description: `Buy ${amount} SOL for $${currentQuote.inputAmount} (including fees)`,
-                  url: currentQuote.redirectUrl || '',
-                  tokenSymbol: "SOL"
-                }]
-              }
-            : msg
-        ));
-      } else {
-        // Replace loading message with error
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === loadingMsgId 
-            ? { ...msg, content: "Sorry, I couldn't get a quote at this time. Please try again later." }
-            : msg
-        ));
-      }
+      // Update the loading message with success message
+      setMessages(prev => prev.map(msg => 
+        msg.messageId === loadingMsgId 
+          ? { ...msg, content: `Opening Stripe payment page. Please complete your purchase there. You'll receive 0.1 SOL on Solana Devnet after the payment is processed, and your payment will be automatically refunded.` }
+          : msg
+      ));
     } catch (error) {
       console.error('Error in handleBuySol:', error);
       setMessages(prev => [...prev, {
         role: "assistant",
         content: error instanceof Error 
           ? `Error: ${error.message}`
-          : "I'm having trouble processing your buy request. Please try again.",
+          : "There was an error opening the payment page. Please try again.",
         messageId: generateMessageId()
       }]);
     }
@@ -958,12 +931,12 @@ export function ChatInterface() {
     }]);
   };
 
-  const handleConfirmPurchase = () => {
+  const handleConfirmPurchase = async () => {
     try {
-      confirmPurchase();
+      await proceedToCheckout();
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Opening MoonPay payment page. Please complete your purchase there. You'll receive your SOL on Solana Devnet after the payment is processed.",
+        content: "Opening Stripe payment page. Please complete your purchase there. You'll receive 0.1 SOL on Solana Devnet after the payment is processed, and your payment will be automatically refunded.",
         messageId: generateMessageId()
       }]);
     } catch (error) {
@@ -1385,320 +1358,320 @@ export function ChatInterface() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={cn(
-              "flex",
-              message.role === "user" ? "justify-end" : "justify-start"
-            )}
-          >
+    <div className="flex flex-col items-center justify-end h-full w-full">
+      <div className="w-full max-w-4xl w-[75vw] h-[85vh] mb-4 mr-8 bg-[#181C23] rounded-2xl shadow-2xl border border-[#252C3B] flex flex-col">
+        {/* Messages area */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((message, index) => (
             <div
+              key={index}
               className={cn(
-                "max-w-[80%] rounded-lg p-3",
-                message.role === "user"
-                  ? "bg-[#2C3444] text-white"
-                  : "bg-[#252C3B] text-white"
+                "flex",
+                message.role === "user" ? "justify-end" : "justify-start"
               )}
             >
-              <ReactMarkdown
-                components={{
-                  a: ({ node, ...props }) => (
-                    <a 
-                      {...props} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-[#34C759] hover:underline"
-                    />
-                  )
-                }}
-              >
-                {message.content}
-              </ReactMarkdown>
-              {/* Render simple buttons for passive income prompt */}
-              {message.options &&
-                message.options.length === 2 &&
-                message.options[0].platform === "Sure" &&
-                message.options[1].platform === "I'm okay, thanks" &&
-                message.messageId === passiveIncomeMessageId && 
-                passiveIncomeHandlers ? (
-                  <div className="flex gap-3 mt-4">
-                    <Button
-                      className="bg-[#34C759] hover:bg-[#2FB350] text-white flex-1"
-                      onClick={passiveIncomeHandlers.onConfirm}
-                    >
-                      Sure
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="border-[#34C759] text-[#34C759] flex-1"
-                      onClick={passiveIncomeHandlers.onDecline}
-                    >
-                      I'm okay, thanks
-                    </Button>
-                  </div>
-                ) : (
-                  message.options && (
-                    <div className="mt-4 space-y-3">
-                      {message.options.map((option, i) => (
-                        <div
-                          key={i}
-                          className="bg-[#1E2533] rounded-lg p-3 border border-[#34C759]"
-                        >
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="font-semibold">{option.platform}</span>
-                            <span className="text-[#34C759] text-lg font-bold">
-                              {option.apy}%
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-400 mb-2">{option.description}</p>
-                          <div className="flex justify-between items-center">
-                            <span className={cn(
-                              "text-sm",
-                              option.riskLevel === "low" && "text-green-400",
-                              option.riskLevel === "medium" && "text-yellow-400",
-                              option.riskLevel === "high" && "text-red-400"
-                            )}>
-                              {option.riskLevel.charAt(0).toUpperCase() + option.riskLevel.slice(1)} Risk
-                            </span>
-                            {option.type === 'buy' ? (
-                              <Button 
-                                className="bg-[#34C759] hover:bg-[#2FB350] text-white text-sm"
-                                onClick={() => window.open(option.url, '_blank')}
-                              >
-                                Proceed to Buy
-                              </Button>
-                            ) : option.platform === option.tokenSymbol ? (
-                              <Button 
-                                className="bg-[#34C759] hover:bg-[#2FB350] text-white text-sm"
-                                onClick={() => {
-                                  const token = tokenList.find(t => t.symbol === option.tokenSymbol);
-                                  if (token) {
-                                    showLendingOptions(token.symbol, token.address);
-                                  }
-                                }}
-                              >
-                                Explore
-                              </Button>
-                            ) : (
-                              <Button 
-                                className="bg-[#34C759] hover:bg-[#2FB350] text-white text-sm"
-                                onClick={() => {
-                                  // Use the Solend flow instead
-                                  const token = tokenList.find(t => t.symbol === option.tokenSymbol);
-                                  if (token) {
-                                    showLendingOptions(token.symbol, token.address);
-                                  }
-                                }}
-                              >
-                                Lend Now
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )
+              <div
+                className={cn(
+                  "max-w-[80%] rounded-lg p-3",
+                  message.role === "user"
+                    ? "bg-[#2C3444] text-white"
+                    : "bg-[#252C3B] text-white"
                 )}
-            </div>
-          </div>
-        ))}
-        {currentQuote && (
-          <div className="flex justify-start">
-            <div className="max-w-[80%]">
-              <QuoteWidget
-                quote={currentQuote}
-                onConfirm={handleConfirmPurchase}
-                onCancel={handleCancelPurchase}
-              />
-            </div>
-          </div>
-        )}
-        {swapQuoteWidget && (
-          <div className="flex justify-start">
-            <div className="max-w-[80%]">
-              <SwapWidget
-                quote={swapQuoteWidget}
-                onConfirm={handleConfirmSwap}
-                onCancel={handleCancelSwap}
-              />
-            </div>
-          </div>
-        )}
-        {solendPools && !showLendingConfirm && (
-          <div className="flex justify-start w-full">
-            <div className="bg-[#1E2533] rounded-lg p-6 border border-[#34C759] mt-4 w-full max-w-[600px] shadow-lg">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-semibold text-white">Lending Options for {lendingToken?.symbol}</h3>
+              >
+                <ReactMarkdown
+                  components={{
+                    a: ({ node, ...props }) => (
+                      <a 
+                        {...props} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-[#34C759] hover:underline"
+                      />
+                    )
+                  }}
+                >
+                  {message.content}
+                </ReactMarkdown>
+                {/* Render simple buttons for passive income prompt */}
+                {message.options &&
+                  message.options.length === 2 &&
+                  message.options[0].platform === "Sure" &&
+                  message.options[1].platform === "I'm okay, thanks" &&
+                  message.messageId === passiveIncomeMessageId && 
+                  passiveIncomeHandlers ? (
+                    <div className="flex gap-3 mt-4">
+                      <Button
+                        className="bg-[#34C759] hover:bg-[#2FB350] text-white flex-1"
+                        onClick={passiveIncomeHandlers.onConfirm}
+                      >
+                        Sure
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="border-[#34C759] text-[#34C759] flex-1"
+                        onClick={passiveIncomeHandlers.onDecline}
+                      >
+                        I'm okay, thanks
+                      </Button>
+                    </div>
+                  ) : (
+                    message.options && (
+                      <div className="mt-4 space-y-3">
+                        {message.options.map((option, i) => (
+                          <div
+                            key={i}
+                            className="bg-[#1E2533] rounded-lg p-3 border border-[#34C759]"
+                          >
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="font-semibold">{option.platform}</span>
+                              <span className="text-[#34C759] text-lg font-bold">
+                                {option.apy}%
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-400 mb-2">{option.description}</p>
+                            <div className="flex justify-between items-center">
+                              <span className={cn(
+                                "text-sm",
+                                option.riskLevel === "low" && "text-green-400",
+                                option.riskLevel === "medium" && "text-yellow-400",
+                                option.riskLevel === "high" && "text-red-400"
+                              )}>
+                                {option.riskLevel.charAt(0).toUpperCase() + option.riskLevel.slice(1)} Risk
+                              </span>
+                              {option.type === 'buy' ? (
+                                <Button 
+                                  className="bg-[#34C759] hover:bg-[#2FB350] text-white text-sm"
+                                  onClick={() => window.open(option.url, '_blank')}
+                                >
+                                  Proceed to Buy
+                                </Button>
+                              ) : option.platform === option.tokenSymbol ? (
+                                <Button 
+                                  className="bg-[#34C759] hover:bg-[#2FB350] text-white text-sm"
+                                  onClick={() => {
+                                    const token = tokenList.find(t => t.symbol === option.tokenSymbol);
+                                    if (token) {
+                                      showLendingOptions(token.symbol, token.address);
+                                    }
+                                  }}
+                                >
+                                  Explore
+                                </Button>
+                              ) : (
+                                <Button 
+                                  className="bg-[#34C759] hover:bg-[#2FB350] text-white text-sm"
+                                  onClick={() => {
+                                    // Use the Solend flow instead
+                                    const token = tokenList.find(t => t.symbol === option.tokenSymbol);
+                                    if (token) {
+                                      showLendingOptions(token.symbol, token.address);
+                                    }
+                                  }}
+                                >
+                                  Lend Now
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
               </div>
-              <div className="space-y-4">
-                {solendPools.length > 0 ? (
-                  solendPools.map((pool, index) => (
-                    <div key={pool.mintAddress + '-' + pool.market} 
-                         className="flex items-center justify-between p-4 bg-[#252C3B] rounded-lg hover:bg-[#2C3444] transition-colors duration-200">
-                      <div className="flex items-center space-x-4">
-                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-[#1E2533] text-[#34C759] font-bold">
-                          {index + 1}
+            </div>
+          ))}
+          {currentQuote && (
+            <div className="flex justify-start">
+              <div className="max-w-[80%]">
+                <QuoteWidget
+                  quote={currentQuote}
+                  onConfirm={handleConfirmPurchase}
+                  onCancel={handleCancelPurchase}
+                />
+              </div>
+            </div>
+          )}
+          {swapQuoteWidget && (
+            <div className="flex justify-start">
+              <div className="max-w-[80%]">
+                <SwapWidget
+                  quote={swapQuoteWidget}
+                  onConfirm={handleConfirmSwap}
+                  onCancel={handleCancelSwap}
+                />
+              </div>
+            </div>
+          )}
+          {solendPools && !showLendingConfirm && (
+            <div className="flex justify-start w-full">
+              <div className="bg-[#1E2533] rounded-lg p-6 border border-[#34C759] mt-4 w-full max-w-[600px] shadow-lg">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-semibold text-white">Lending Options for {lendingToken?.symbol}</h3>
+                </div>
+                <div className="space-y-4">
+                  {solendPools.length > 0 ? (
+                    solendPools.map((pool, index) => (
+                      <div key={pool.mintAddress + '-' + pool.market} 
+                           className="flex items-center justify-between p-4 bg-[#252C3B] rounded-lg hover:bg-[#2C3444] transition-colors duration-200">
+                        <div className="flex items-center space-x-4">
+                          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-[#1E2533] text-[#34C759] font-bold">
+                            {index + 1}
+                          </div>
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-white font-medium text-lg">{lendingToken?.symbol}</span>
+                              <span className={cn(
+                                "text-xs px-2 py-1 rounded-full font-medium",
+                                pool.riskLevel === 'low' && "bg-green-900/50 text-green-400",
+                                pool.riskLevel === 'moderate' && "bg-yellow-900/50 text-yellow-400",
+                                pool.riskLevel === 'high' && "bg-red-900/50 text-red-400"
+                              )}>
+                                {pool.riskLevel.charAt(0).toUpperCase() + pool.riskLevel.slice(1)} Risk
+                              </span>
+                            </div>
+                            <div className="text-sm text-gray-400 mt-1">
+                              Market: {pool.market.slice(0, 6)}...{pool.market.slice(-4)}
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <span className="text-white font-medium text-lg">{lendingToken?.symbol}</span>
-                            <span className={cn(
-                              "text-xs px-2 py-1 rounded-full font-medium",
-                              pool.riskLevel === 'low' && "bg-green-900/50 text-green-400",
-                              pool.riskLevel === 'moderate' && "bg-yellow-900/50 text-yellow-400",
-                              pool.riskLevel === 'high' && "bg-red-900/50 text-red-400"
-                            )}>
-                              {pool.riskLevel.charAt(0).toUpperCase() + pool.riskLevel.slice(1)} Risk
-                            </span>
+                        <div className="flex items-center space-x-6">
+                          <div className="text-right">
+                            <div className="text-[#34C759] font-bold text-xl">{pool.apy.toFixed(2)}%</div>
+                            <div className="text-sm text-gray-400">APY</div>
                           </div>
-                          <div className="text-sm text-gray-400 mt-1">
-                            Market: {pool.market.slice(0, 6)}...{pool.market.slice(-4)}
-                          </div>
+                          <Button 
+                            size="sm" 
+                            className="bg-[#34C759] hover:bg-[#2FB350] text-white px-4 py-2 rounded-lg transition-colors duration-200"
+                            onClick={() => {
+                              setLendingAmount(null);
+                              setSelectedPool(pool);
+                              setShowLendingConfirm(true);
+                            }}
+                          >
+                            Lend
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-6">
-                        <div className="text-right">
-                          <div className="text-[#34C759] font-bold text-xl">{pool.apy.toFixed(2)}%</div>
-                          <div className="text-sm text-gray-400">APY</div>
-                        </div>
-                        <Button 
-                          size="sm" 
-                          className="bg-[#34C759] hover:bg-[#2FB350] text-white px-4 py-2 rounded-lg transition-colors duration-200"
-                          onClick={() => {
-                            setLendingAmount(null);
-                            setSelectedPool(pool);
-                            setShowLendingConfirm(true);
-                          }}
-                        >
-                          Lend
-                        </Button>
-                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="text-gray-400 mb-2">No lending options available at the moment.</div>
+                      <div className="text-sm text-gray-500">Please try again later or check other tokens.</div>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8">
-                    <div className="text-gray-400 mb-2">No lending options available at the moment.</div>
-                    <div className="text-sm text-gray-500">Please try again later or check other tokens.</div>
-                  </div>
-                )}
-              </div>
-              <div className="mt-6 pt-4 border-t border-[#252C3B]">
-                <div className="grid grid-cols-3 gap-4 text-sm text-gray-400">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 rounded-full bg-green-400"></div>
-                    <span>Low Risk: 0-5% APY</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
-                    <span>Moderate Risk: 5-15% APY</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 rounded-full bg-red-400"></div>
-                    <span>High Risk: 15-30% APY</span>
-                  </div>
+                  )}
                 </div>
-                <div className="mt-4 text-xs text-gray-500 text-center">
-                  * APY rates are subject to change based on market conditions
+                <div className="mt-6 pt-4 border-t border-[#252C3B]">
+                  <div className="grid grid-cols-3 gap-4 text-sm text-gray-400">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 rounded-full bg-green-400"></div>
+                      <span>Low Risk: 0-5% APY</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
+                      <span>Moderate Risk: 5-15% APY</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 rounded-full bg-red-400"></div>
+                      <span>High Risk: 15-30% APY</span>
+                    </div>
+                  </div>
+                  <div className="mt-4 text-xs text-gray-500 text-center">
+                    * APY rates are subject to change based on market conditions
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-        {showLendingConfirm && selectedPool !== null && (
-          <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4 max-w-[400px]">
-            <h3 className="text-lg font-semibold text-white mb-2">Confirm Lending</h3>
-            <p className="text-white mb-2">You're about to lend <b>{lendingToken?.symbol}</b> for <b>{selectedPool.apy}%</b> APY on Solend.</p>
-            <div className="mb-4">
-              <label className="block text-gray-300 mb-1" htmlFor="lending-amount">Amount to Lend</label>
-              <input
-                id="lending-amount"
-                type="number"
-                min="0"
-                step="any"
-                value={lendingAmount === null ? '' : lendingAmount}
-                onChange={e => setLendingAmount(e.target.value === '' ? null : Number(e.target.value))}
-                className="w-full px-3 py-2 rounded bg-[#252C3B] border border-[#34C759] text-white focus:outline-none focus:ring-2 focus:ring-[#34C759]"
-                placeholder={`Enter amount of ${lendingToken?.symbol}`}
-              />
-            </div>
-            <div className="flex gap-3 mt-4">
-              <Button
-                className="bg-[#34C759] text-white flex-1"
-                onClick={handleLendNow}
-                disabled={lendingAmount === null || isNaN(lendingAmount) || lendingAmount <= 0}
-              >
-                Lend Now
-              </Button>
-              <Button variant="outline" className="flex-1 border-[#34C759] text-[#34C759]" onClick={() => setShowLendingConfirm(false)}>Cancel</Button>
-            </div>
-          </div>
-        )}
-        {isTyping && (
-          <div className="flex justify-start">
-            <div className="bg-[#252C3B] rounded-lg p-3">
-              <div className="flex space-x-2">
-                <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce delay-100" />
-                <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce delay-200" />
+          )}
+          {showLendingConfirm && selectedPool !== null && (
+            <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4 max-w-[400px]">
+              <h3 className="text-lg font-semibold text-white mb-2">Confirm Lending</h3>
+              <p className="text-white mb-2">You're about to lend <b>{lendingToken?.symbol}</b> for <b>{selectedPool.apy}%</b> APY on Solend.</p>
+              <div className="mb-4">
+                <label className="block text-gray-300 mb-1" htmlFor="lending-amount">Amount to Lend</label>
+                <input
+                  id="lending-amount"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={lendingAmount === null ? '' : lendingAmount}
+                  onChange={e => setLendingAmount(e.target.value === '' ? null : Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded bg-[#252C3B] border border-[#34C759] text-white focus:outline-none focus:ring-2 focus:ring-[#34C759]"
+                  placeholder={`Enter amount of ${lendingToken?.symbol}`}
+                />
+              </div>
+              <div className="flex gap-3 mt-4">
+                <Button
+                  className="bg-[#34C759] text-white flex-1"
+                  onClick={handleLendNow}
+                  disabled={lendingAmount === null || isNaN(lendingAmount) || lendingAmount <= 0}
+                >
+                  Lend Now
+                </Button>
+                <Button variant="outline" className="flex-1 border-[#34C759] text-[#34C759]" onClick={() => setShowLendingConfirm(false)}>Cancel</Button>
               </div>
             </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Quick Action Buttons */}
-      <div className="p-4 border-t border-[#252C3B]">
-        <div className="flex flex-wrap gap-2 mb-4">
-          <Button
-            variant="outline"
-            className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
-            onClick={() => handleQuickAction("Buy 0.1 SOL")}
-          >
-            Buy SOL
-          </Button>
-          <Button
-            variant="outline"
-            className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
-            onClick={() => handleQuickAction("Buy 10 USDC")}
-          >
-            Buy USDC
-          </Button>
-          <Button
-            variant="outline"
-            className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
-            onClick={() => handleQuickAction("Show me lending options for USDC")}
-          >
-            Explore Lending Options
-          </Button>
-          <Button
-            variant="outline"
-            className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
-            onClick={() => handleQuickAction("View my portfolio")}
-          >
-            View Portfolio
-          </Button>
+          )}
+          {isTyping && (
+            <div className="flex justify-start">
+              <div className="bg-[#252C3B] rounded-lg p-3">
+                <div className="flex space-x-2">
+                  <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce delay-100" />
+                  <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce delay-200" />
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
-        <div className="flex gap-2">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && handleSend()}
-            placeholder="Type your message..."
-            className="flex-1 bg-[#1E2533] border-[#252C3B] text-white focus:border-[#34C759]"
-          />
-          <Button
-            onClick={handleSend}
-            className="bg-[#34C759] hover:bg-[#2FB350] text-white"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
+        {/* Quick actions and input */}
+        <div className="w-full border-t border-[#252C3B] p-4 bg-[#181C23]">
+          <div className="flex flex-wrap gap-2 mb-4 justify-center">
+            <Button
+              variant="outline"
+              className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
+              onClick={() => handleQuickAction("Buy 0.1 SOL")}
+            >
+              Buy SOL
+            </Button>
+            <Button
+              variant="outline"
+              className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
+              onClick={() => handleQuickAction("Buy 10 USDC")}
+            >
+              Buy USDC
+            </Button>
+            <Button
+              variant="outline"
+              className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
+              onClick={() => handleQuickAction("Show me lending options for USDC")}
+            >
+              Explore Lending Options
+            </Button>
+            <Button
+              variant="outline"
+              className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
+              onClick={() => handleQuickAction("View my portfolio")}
+            >
+              View Portfolio
+            </Button>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && handleSend()}
+              placeholder="Type your message..."
+              className="flex-1 bg-[#1E2533] border-[#252C3B] text-white focus:border-[#34C759]"
+            />
+            <Button
+              onClick={handleSend}
+              className="bg-[#34C759] hover:bg-[#2FB350] text-white"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>

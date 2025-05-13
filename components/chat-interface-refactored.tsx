@@ -54,7 +54,8 @@ export function ChatInterface() {
     confirmPurchase,
     cancelPurchase,
     handleSuccess,
-    handleCancel
+    handleCancel,
+    proceedToCheckout
   } = useOnrampState();
 
   const {
@@ -314,56 +315,26 @@ export function ChatInterface() {
       const loadingMsgId = generateMessageId();
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `Getting quote for ${amount} SOL on Solana Devnet...`,
+        content: `Opening payment page to purchase 0.1 SOL on Solana Devnet...`,
         messageId: loadingMsgId
       }]);
 
-      await getQuote(amount);
+      // Skip quote fetching and directly proceed to checkout
+      await proceedToCheckout();
       
-      if (onrampError) {
-        // Replace loading message with error
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === loadingMsgId 
-            ? { ...msg, content: `Error: ${onrampError}` }
-            : msg
-        ));
-        return;
-      }
-
-      if (currentQuote) {
-        // Replace loading message with quote
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === loadingMsgId 
-            ? { 
-                ...msg, 
-                content: `I've found a way to buy ${amount} SOL on Solana Devnet. Here are the details:`,
-                options: [{
-                  platform: "MoonPay",
-                  type: "buy",
-                  apy: 0,
-                  riskLevel: "low",
-                  description: `Buy ${amount} SOL for $${currentQuote.inputAmount} (including fees)`,
-                  url: currentQuote.redirectUrl || '',
-                  tokenSymbol: "SOL"
-                }]
-              }
-            : msg
-        ));
-      } else {
-        // Replace loading message with error
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === loadingMsgId 
-            ? { ...msg, content: "Sorry, I couldn't get a quote at this time. Please try again later." }
-            : msg
-        ));
-      }
+      // Update the loading message with success message
+      setMessages(prev => prev.map(msg => 
+        msg.messageId === loadingMsgId 
+          ? { ...msg, content: `Opening Stripe payment page. Please complete your purchase there. You'll receive 0.1 SOL on Solana Devnet after the payment is processed, and your payment will be automatically refunded.` }
+          : msg
+      ));
     } catch (error) {
       console.error('Error in handleBuySol:', error);
       setMessages(prev => [...prev, {
         role: "assistant",
         content: error instanceof Error 
           ? `Error: ${error.message}`
-          : "I'm having trouble processing your buy request. Please try again.",
+          : "There was an error opening the payment page. Please try again.",
         messageId: generateMessageId()
       }]);
     }
@@ -678,12 +649,12 @@ export function ChatInterface() {
     }]);
   };
 
-  const handleConfirmPurchase = () => {
+  const handleConfirmPurchase = async () => {
     try {
-      confirmPurchase();
+      await proceedToCheckout();
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Opening MoonPay payment page. Please complete your purchase there. You'll receive your SOL on Solana Devnet after the payment is processed.",
+        content: "Opening Stripe payment page. Please complete your purchase there. You'll receive 0.1 SOL on Solana Devnet after the payment is processed, and your payment will be automatically refunded.",
         messageId: generateMessageId()
       }]);
     } catch (error) {

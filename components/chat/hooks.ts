@@ -50,7 +50,29 @@ export function useWalletState() {
 }
 
 export function useOnrampState() {
-  return useOnramp();
+  const { 
+    isProcessing, 
+    currentQuote, 
+    error,
+    getQuote,
+    confirmPurchase,
+    cancelPurchase,
+    handleSuccess,
+    handleCancel,
+    proceedToCheckout
+  } = useOnramp()
+  
+  return {
+    isProcessing,
+    currentQuote,
+    error,
+    getQuote,
+    confirmPurchase,
+    cancelPurchase,
+    handleSuccess,
+    handleCancel,
+    proceedToCheckout
+  }
 }
 
 export function useJupiterState() {

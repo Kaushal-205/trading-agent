@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { usePrivyAuth } from '@/components/privy/privy-auth-provider';
+import axios from 'axios';
 
 interface OnrampQuote {
   provider: string;
@@ -28,10 +29,10 @@ interface UseOnrampReturn {
   cancelPurchase: () => void;
   handleSuccess: () => void;
   handleCancel: () => void;
+  proceedToCheckout: () => Promise<void>;
 }
 
-// MoonPay sandbox environment
-const MOONPAY_WIDGET_URL = 'https://buy-sandbox.moonpay.com';
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
 
 export function useOnramp(): UseOnrampReturn {
   const { publicKey } = useWallet();
@@ -39,8 +40,10 @@ export function useOnramp(): UseOnrampReturn {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentQuote, setCurrentQuote] = useState<OnrampQuote | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
 
-  const getQuote = async (amount: number) => {
+  // Helper function to directly create a Stripe checkout session
+  const proceedToCheckout = async () => {
     // Check for either Solana wallet adapter or Privy wallet
     const userAddress = publicKey?.toString() || walletAddress;
     
@@ -49,8 +52,39 @@ export function useOnramp(): UseOnrampReturn {
       return;
     }
 
-    if (!process.env.NEXT_PUBLIC_MOONPAY_PUBLISHABLE_KEY) {
-      setError('MoonPay API key is not configured');
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      console.log('Creating Stripe checkout session...');
+      
+      // Create Stripe checkout session via backend
+      const response = await axios.post(`${BACKEND_URL}/api/create-checkout-session`, {
+        walletAddress: userAddress,
+        email: undefined
+      });
+      
+      if (!response.data?.url) {
+        throw new Error('Invalid response from server');
+      }
+
+      // Open the Stripe checkout in a new window
+      window.open(response.data.url, '_blank');
+    } catch (error) {
+      console.error('Error creating checkout session:', error);
+      setError(error instanceof Error ? error.message : 'Failed to create checkout session');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Create a mock quote just for display purposes
+  const getQuote = async (amount: number) => {
+    // Check for either Solana wallet adapter or Privy wallet
+    const userAddress = publicKey?.toString() || walletAddress;
+    
+    if (!userAddress) {
+      setError('Please connect your wallet first');
       return;
     }
 
@@ -63,67 +97,36 @@ export function useOnramp(): UseOnrampReturn {
     setError(null);
 
     try {
-      console.log('Creating MoonPay purchase URL...');
-      console.log('Amount:', amount);
-      
-      // Create MoonPay URL
-      const moonpayUrl = new URL(MOONPAY_WIDGET_URL);
-      moonpayUrl.searchParams.append('apiKey', process.env.NEXT_PUBLIC_MOONPAY_PUBLISHABLE_KEY || '');
-      moonpayUrl.searchParams.append('currencyCode', 'sol');
-      moonpayUrl.searchParams.append('walletAddress', userAddress);
-      moonpayUrl.searchParams.append('baseCurrencyAmount', amount.toString());
-      moonpayUrl.searchParams.append('baseCurrencyCode', 'usd');
-      moonpayUrl.searchParams.append('redirectURL', `${window.location.origin}/chat?status=success`);
-      moonpayUrl.searchParams.append('cancelURL', `${window.location.origin}/chat?status=cancel`);
-      moonpayUrl.searchParams.append('showWalletAddressForm', 'true');
-      moonpayUrl.searchParams.append('network', 'solana');
-      moonpayUrl.searchParams.append('environment', 'sandbox');
-      moonpayUrl.searchParams.append('colorCode', '#34C759');
-
-      const urlString = moonpayUrl.toString();
-      console.log('Generated MoonPay URL:', urlString);
-
-      // Create a mock quote for display purposes
+      // Create a fixed mock quote without any API calls
       const quote: OnrampQuote = {
-        provider: "MoonPay",
-        inputAmount: amount,
+        provider: "Stripe",
+        inputAmount: 1, // $1 USD
         inputCurrency: 'USD',
-        outputAmount: amount, // This will be calculated by MoonPay
+        outputAmount: 0.1, // 0.1 SOL
         outputCurrency: 'SOL',
         fees: {
-          provider: 0, // This will be calculated by MoonPay
-          network: 0,  // This will be calculated by MoonPay
-          total: 0     // This will be calculated by MoonPay
+          provider: 0,
+          network: 0,
+          total: 0
         },
-        estimatedProcessingTime: "2-5 minutes",
-        exchangeRate: 0, // This will be calculated by MoonPay
-        network: 'mainnet-beta',
-        redirectUrl: urlString
+        estimatedProcessingTime: "1-2 minutes",
+        exchangeRate: 10, // 1 SOL = 10 USD
+        network: 'devnet',
+        redirectUrl: '' // Will be populated when confirmPurchase is called
       };
 
       console.log('Created quote:', quote);
       setCurrentQuote(quote);
     } catch (error) {
       console.error('Error in getQuote:', error);
-      setError(error instanceof Error ? error.message : 'Failed to create purchase URL');
+      setError(error instanceof Error ? error.message : 'Failed to create checkout session');
     } finally {
       setIsProcessing(false);
     }
   };
 
   const confirmPurchase = () => {
-    if (!currentQuote?.redirectUrl) {
-      setError('No payment URL available');
-      return;
-    }
-
-    try {
-      window.open(currentQuote.redirectUrl, '_blank');
-      setCurrentQuote(null);
-    } catch (error) {
-      console.error('Error opening payment page:', error);
-      setError('Failed to open payment page');
-    }
+    proceedToCheckout(); // Directly proceed to checkout instead of using the quote URL
   };
 
   const cancelPurchase = () => {
@@ -149,6 +152,7 @@ export function useOnramp(): UseOnrampReturn {
     confirmPurchase,
     cancelPurchase,
     handleSuccess,
-    handleCancel
+    handleCancel,
+    proceedToCheckout
   };
 } 

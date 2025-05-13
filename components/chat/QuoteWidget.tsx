@@ -1,3 +1,4 @@
+import React from 'react';
 import { Check, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { OnrampQuote } from "./types"
@@ -13,7 +14,7 @@ export function QuoteWidget({ quote, onConfirm, onCancel, isProcessing = false }
   return (
     <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-white">MoonPay Purchase</h3>
+        <h3 className="text-lg font-semibold text-white">Stripe Purchase</h3>
         <span className="text-[#34C759] text-lg font-bold">
           {quote.outputAmount} {quote.outputCurrency}
         </span>
