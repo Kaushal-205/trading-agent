@@ -79,29 +79,10 @@ export async function fetchSolendPoolsByMint(mint: string): Promise<SolendPool[]
     return sortedPools;
   } catch (error) {
     console.error('Error in fetchSolendPoolsByMint:', error);
-    // Fallback to API route if direct fetch fails
-    return fetchSolendPoolsFromAPI(mint);
-  }
-}
-
-// Fallback method using the API route
-async function fetchSolendPoolsFromAPI(tokenMint: string): Promise<SolendPool[]> {
-  try {
-    console.log('Falling back to API route for Solend pools. Token mint:', tokenMint);
-    const response = await fetch(`${config.apiUrl}/api/solend-pools?mint=${tokenMint}`);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Solend pools: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    console.log('Received Solend pools data from API:', data);
-    return data.pools || [];
-  } catch (error) {
-    console.error('Error fetching Solend pools from API:', error);
     return [];
   }
 }
+
 
 export async function submitSolendLend(
   pool: string,

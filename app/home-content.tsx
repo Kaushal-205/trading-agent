@@ -4,7 +4,7 @@ import dynamic from "next/dynamic"
 import { PageContainer } from "@/components/page-container"
 
 const ChatInterface = dynamic(
-  () => import("@/components/chat-interface").then(mod => mod.ChatInterface),
+  () => import("@/components/chat-interface-refactored").then(mod => mod.ChatInterface),
   { ssr: false }
 )
 
