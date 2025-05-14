@@ -1,68 +1,77 @@
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send } from "lucide-react"
+import { SendIcon, Search } from "lucide-react"
 
 interface ChatInputAreaProps {
-  input: string;
-  onInputChange: (value: string) => void;
-  onSend: () => void;
-  onQuickAction: (action: string) => void;
+  input: string
+  onInputChange: (value: string) => void
+  onSend: () => void
+  onQuickAction: (action: string) => void
 }
 
 export function ChatInputArea({
   input,
   onInputChange,
   onSend,
-  onQuickAction
+  onQuickAction,
 }: ChatInputAreaProps) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      onSend()
+    }
+  }
+
   return (
-    <div className="p-4 w-full max-w-screen-2xl mx-auto">
+    <div className="p-4">
       <div className="flex flex-wrap gap-2 mb-3">
         <Button
           variant="outline"
-          className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
+          className="bg-white text-black hover:bg-gray-100 border-input"
           onClick={() => onQuickAction("Buy 0.1 SOL")}
         >
           Buy SOL
         </Button>
         <Button
           variant="outline"
-          className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
-          onClick={() => onQuickAction("Buy 10 USDC")}
+          className="bg-white text-black hover:bg-gray-100 border-input"
+          onClick={() => onQuickAction("Buy 10 FAME")}
         >
-          Buy USDC
+          Buy FAME token
         </Button>
         <Button
           variant="outline"
-          className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
+          className="bg-white text-black hover:bg-gray-100 border-input"
           onClick={() => onQuickAction("Show me lending options for USDC")}
         >
           Explore Lending Options
         </Button>
-        <Button
-          variant="outline"
-          className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
-          onClick={() => onQuickAction("View my portfolio")}
-        >
-          View Portfolio
-        </Button>
       </div>
-
-      <div className="flex gap-2">
-        <Input
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          onKeyPress={(e) => e.key === "Enter" && onSend()}
-          placeholder="Type your message..."
-          className="flex-1 bg-[#1E2533] border-[#252C3B] text-white focus:border-[#34C759] py-4"
-        />
+      
+      <div className="flex items-center w-full">
+        <div className="relative flex-1">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-purple opacity-70">
+            <Search size={18} />
+          </div>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => onInputChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="I want to buy 0.1 Sol"
+            className="w-full border border-input rounded-lg bg-white px-12 py-2 text-md shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-white text-black"
+          />
+        </div>
         <Button
           onClick={onSend}
-          className="bg-[#34C759] hover:bg-[#2FB350] text-white px-4"
+          disabled={!input.trim()}
+          variant="purple"
+          className="ml-3 px-4 py-2"
         >
-          <Send className="h-5 w-5" />
+          <SendIcon size={18} />
         </Button>
       </div>
     </div>
-  );
+  )
 } 

@@ -8,6 +8,7 @@ import { PrivyAdapterProvider } from "@/components/privy/privy-adapter"
 import { SolanaWalletProvider } from "@/components/solana/wallet-provider"
 import { Toaster } from "@/components/toaster"
 import { AppSidebar } from "@/components/app-sidebar"
+import { Loader } from "@/components/ui/loader"
 
 interface ClientLayoutProps {
   children: React.ReactNode
@@ -15,26 +16,24 @@ interface ClientLayoutProps {
 
 export default function ClientLayout({ children }: ClientLayoutProps) {
   return (
-    <div className="flex min-h-screen w-full">
-      <PrivyWalletProvider>
-        <PrivyAuthProvider>
-          <PrivyAdapterProvider>
-            <SolanaWalletProvider>
-              <SidebarProvider>
-                <div className="flex min-h-screen w-full bg-background">
-                  <AppSidebar />
-                  <div className="flex-1 overflow-hidden">
-                    <Suspense fallback={<div>Loading...</div>}>
-                      {children}
-                    </Suspense>
-                  </div>
+    <PrivyWalletProvider>
+      <PrivyAuthProvider>
+        <PrivyAdapterProvider>
+          <SolanaWalletProvider>
+            <SidebarProvider>
+              <div className="app-layout">
+                <AppSidebar />
+                <div className="main-content">
+                  <Suspense fallback={<Loader />}>
+                    {children}
+                  </Suspense>
                 </div>
-              </SidebarProvider>
-              <Toaster />
-            </SolanaWalletProvider>
-          </PrivyAdapterProvider>
-        </PrivyAuthProvider>
-      </PrivyWalletProvider>
-    </div>
+              </div>
+            </SidebarProvider>
+            <Toaster />
+          </SolanaWalletProvider>
+        </PrivyAdapterProvider>
+      </PrivyAuthProvider>
+    </PrivyWalletProvider>
   )
 } 

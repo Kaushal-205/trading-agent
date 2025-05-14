@@ -6,11 +6,12 @@ import { YieldOptions } from "@/components/yield-options"
 import { PortfolioMetrics } from "@/components/portfolio-metrics"
 import { PerformanceChart } from "@/components/performance-chart"
 import { PositionsTable } from "@/components/positions-table"
-import { useWalletAuth } from "@/components/solana/wallet-auth-provider"
+import { usePrivyAuth } from "@/components/privy/privy-auth-provider"
 import { PageContainer } from "@/components/page-container"
 
 export function Dashboard() {
-  const { isAuthenticated } = useWalletAuth()
+  const { isAuthenticated, walletAddress } = usePrivyAuth()
+  const isConnected = isAuthenticated && !!walletAddress
 
   return (
     <PageContainer 
@@ -18,7 +19,7 @@ export function Dashboard() {
       subtitle="Monitor your portfolio and explore yield opportunities."
     >
       <div className="p-4">
-        {!isAuthenticated && (
+        {!isConnected && (
           <div className="rounded-lg border border-dashed border-border p-4 bg-secondary/30 text-sm mb-4">
             <p className="text-center sm:text-left">
               <strong>Demo Mode:</strong> Showing simulated data. For a live experience, connect your Privy wallet.

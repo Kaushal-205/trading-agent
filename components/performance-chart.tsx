@@ -41,7 +41,7 @@ export function PerformanceChart() {
         {timeframes.map((tf) => (
           <Button
             key={tf.value}
-            variant={timeframe === tf.value ? "default" : "outline"}
+            variant={timeframe === tf.value ? "purple" : "outline"}
             size="sm"
             onClick={() => setTimeframe(tf.value)}
           >
@@ -81,7 +81,7 @@ export function PerformanceChart() {
               type="monotone"
               dataKey="value"
               name="Portfolio Value"
-              stroke="#10b981"
+              stroke="#813DD4"
               strokeWidth={2}
               dot={false}
               activeDot={{ r: 6 }}
@@ -91,7 +91,7 @@ export function PerformanceChart() {
               type="monotone"
               dataKey="yield"
               name="Yield Earned"
-              stroke="#06b6d4"
+              stroke="#aa7ae8"
               strokeWidth={2}
               dot={false}
               activeDot={{ r: 6 }}

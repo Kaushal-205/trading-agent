@@ -12,46 +12,46 @@ interface QuoteWidgetProps {
 
 export function QuoteWidget({ quote, onConfirm, onCancel, isProcessing = false }: QuoteWidgetProps) {
   return (
-    <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4">
+    <div className="widget bg-white rounded-lg p-4 border border-brand-purple/30 mt-4">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-white">Stripe Purchase</h3>
-        <span className="text-[#34C759] text-lg font-bold">
+        <h3 className="text-lg font-semibold text-black">Stripe Purchase</h3>
+        <span className="text-brand-purple text-lg font-bold">
           {quote.outputAmount} {quote.outputCurrency}
         </span>
       </div>
       
-      <div className="space-y-2 text-sm text-gray-400">
+      <div className="space-y-2 text-sm text-gray-600">
         <div className="flex justify-between">
-          <span>You Pay:</span>
-          <span className="text-white">${quote.inputAmount} {quote.inputCurrency}</span>
+          <span className="text-gray-800 font-medium">You Pay:</span>
+          <span className="text-black">${quote.inputAmount} {quote.inputCurrency}</span>
         </div>
         <div className="flex justify-between">
-          <span>You Receive:</span>
-          <span className="text-white">{quote.outputAmount} {quote.outputCurrency}</span>
+          <span className="text-gray-800 font-medium">You Receive:</span>
+          <span className="text-black">{quote.outputAmount} {quote.outputCurrency}</span>
         </div>
         <div className="flex justify-between">
-          <span>Provider Fee:</span>
-          <span className="text-white">${quote.fees.provider.toFixed(2)}</span>
+          <span className="text-gray-800 font-medium">Provider Fee:</span>
+          <span className="text-black">${quote.fees.provider.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span>Network Fee:</span>
-          <span className="text-white">${quote.fees.network.toFixed(2)}</span>
+          <span className="text-gray-800 font-medium">Network Fee:</span>
+          <span className="text-black">${quote.fees.network.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span>Total Fees:</span>
-          <span className="text-white">${quote.fees.total.toFixed(2)}</span>
+          <span className="text-gray-800 font-medium">Total Fees:</span>
+          <span className="text-black">${quote.fees.total.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span>Exchange Rate:</span>
-          <span className="text-white">1 {quote.inputCurrency} = {quote.exchangeRate.toFixed(6)} {quote.outputCurrency}</span>
+          <span className="text-gray-800 font-medium">Exchange Rate:</span>
+          <span className="text-black">1 {quote.inputCurrency} = {quote.exchangeRate.toFixed(6)} {quote.outputCurrency}</span>
         </div>
         <div className="flex justify-between">
-          <span>Network:</span>
-          <span className="text-white">Solana Devnet</span>
+          <span className="text-gray-800 font-medium">Network:</span>
+          <span className="text-black">Solana Devnet</span>
         </div>
         <div className="flex justify-between">
-          <span>Processing Time:</span>
-          <span className="text-white">{quote.estimatedProcessingTime}</span>
+          <span className="text-gray-800 font-medium">Processing Time:</span>
+          <span className="text-black">{quote.estimatedProcessingTime}</span>
         </div>
       </div>
 
@@ -59,7 +59,8 @@ export function QuoteWidget({ quote, onConfirm, onCancel, isProcessing = false }
         <Button
           onClick={onConfirm}
           disabled={isProcessing}
-          className="flex-1 bg-[#34C759] hover:bg-[#2FB350] text-white"
+          variant="purple"
+          className="flex-1 text-white"
         >
           {isProcessing ? (
             <span className="flex items-center">
@@ -80,7 +81,7 @@ export function QuoteWidget({ quote, onConfirm, onCancel, isProcessing = false }
           onClick={onCancel}
           disabled={isProcessing}
           variant="outline"
-          className="flex-1 border-[#34C759] text-[#34C759] hover:bg-[#34C759] hover:text-white"
+          className="flex-1 border-brand-purple text-brand-purple bg-brand-purple/10 hover:bg-brand-purple/20"
         >
           <X className="h-4 w-4 mr-2" />
           Cancel

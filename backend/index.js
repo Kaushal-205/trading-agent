@@ -436,7 +436,7 @@ app.post('/api/transfer-sol', async (req, res) => {
     console.log(`SOL transfer successful! Transaction signature: ${signature}`);
     
     // Create explorer link
-    const explorerLink = `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+    const explorerLink = `https://solscan.io/tx/${signature}?cluster=devnet`;
     
     return res.status(200).json({
       status: 'success',
@@ -506,7 +506,7 @@ async function processSolTransfer(sessionId, walletAddress, paymentIntentId, ref
     console.log(`SOL transfer successful! Transaction signature: ${signature}`);
     
     // Create explorer link
-    const explorerLink = `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+    const explorerLink = `https://solscan.io/tx/${signature}?cluster=devnet`;
     
     // Update session status
     if (paymentSessions.has(sessionId)) {

@@ -10,7 +10,7 @@ const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "Trading/Yield Agent",
-  description: "Modern Trading and Yield Agent Platform",
+  description: "Modern Crypto Investing and Yield Opportunities",
   generator: 'v0.dev'
 }
 
@@ -22,7 +22,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className="h-full">
       <body className={`${inter.className} min-h-full w-full antialiased`}>
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
           <ClientLayout>
             {children}
           </ClientLayout>

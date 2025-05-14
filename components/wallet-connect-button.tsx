@@ -15,7 +15,7 @@ import { toast } from "@/components/ui/use-toast"
 import { ToastAction } from "@/components/ui/toast"
 
 export function WalletConnectButton() {
-  const { isAuthenticated, isAuthenticating, authenticate, logout, authError, walletAddress, shortAddress } = usePrivyAuth()
+  const { isAuthenticated, isAuthenticating, authenticate, logout, authError, walletAddress } = usePrivyAuth()
   const [isAuthenticatingLocal, setIsAuthenticatingLocal] = useState(false)
 
   const handleAuthenticate = async () => {
@@ -59,7 +59,7 @@ export function WalletConnectButton() {
       <Button
         onClick={handleAuthenticate}
         disabled={isAuthenticating || isAuthenticatingLocal}
-        className="gap-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600"
+        variant="purple"
       >
         {isAuthenticating || isAuthenticatingLocal ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -75,9 +75,9 @@ export function WalletConnectButton() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="gap-2 border-emerald-500/30 bg-emerald-500/10">
-          <CheckCircle className="h-4 w-4 text-emerald-500" />
-          <span>{shortAddress}</span>
+        <Button variant="outline" className="gap-2 border-brand-purple/30 bg-brand-purple/10 text-black">
+          <CheckCircle className="h-4 w-4 text-brand-purple" />
+          <span>Connected</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -88,7 +88,7 @@ export function WalletConnectButton() {
         {walletAddress && (
           <DropdownMenuItem
             onClick={() =>
-              window.open(`https://explorer.solana.com/address/${walletAddress}?cluster=devnet`, "_blank")
+              window.open(`https://solscan.io/address/${walletAddress}?cluster=devnet`, "_blank")
             }
           >
             <ExternalLink className="mr-2 h-4 w-4" />

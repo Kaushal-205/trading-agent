@@ -2,11 +2,16 @@
 
 import dynamic from "next/dynamic"
 import { PageContainer } from "@/components/page-container"
+import { Loader } from "@/components/ui/loader"
 
 const DynamicChatInterface = dynamic(
   () => import('../components/chat-interface'),
   { 
-    loading: () => <p>Loading...</p>,
+    loading: () => (
+      <div className="flex items-center justify-center w-full h-[60vh]">
+        <Loader className="bg-purple-100" />
+      </div>
+    ),
     ssr: false
   }
 )

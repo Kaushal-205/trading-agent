@@ -208,9 +208,15 @@ export default function ChatInterface() {
         msg.messageId === promptMsgId
           ? {
             ...msg,
-            options: [
-              { platform: "Sure", type: "lend", apy: 0, riskLevel: "low", description: "Show safe lending options", url: "", tokenSymbol: token.symbol },
-              { platform: "I'm okay, thanks", type: "lend", apy: 0, riskLevel: "low", description: "Decline lending options", url: "", tokenSymbol: token.symbol }
+            passiveIncomeOptions: [
+              {
+                'choice': 'Sure',
+                'action': 'showLendingOptions'
+              },
+              {
+                'choice': 'I\'m okay, thanks',
+                'action': ''
+              }
             ]
           }
           : msg
@@ -236,7 +242,7 @@ export default function ChatInterface() {
           const loadingMsgId = generateMessageId();
           setMessages(prev => [...prev, {
             role: "assistant",
-            content: "Processing your SOL purchase, transferring tokens to your wallet...",
+            content: "<div class='flex items-center gap-2'><span>Processing your SOL purchase</span><span class='animate-pulse'>...</span><div class='ml-2 h-4 w-4 animate-spin rounded-full border-2 border-solid border-brand-purple border-t-transparent'></div></div>",
             messageId: loadingMsgId
           }]);
           
@@ -579,12 +585,16 @@ export default function ChatInterface() {
         setSwapQuoteWidget(null);
       }
     }
-  }, [swapResult, clearSwapResult]);
+  }, [swapResult, clearSwapResult, setMessages, handlePassiveIncomePrompt, setIsSwapProcessing, setSwapQuoteWidget]);
 
   // Updated effect to clean up passive income state when not needed
   useEffect(() => {
     // Clean up passive income state when no buttons are displayed
-    if (!messages.some(msg => msg.messageId === passiveIncomeMessageId)) {
+    if (passiveIncomeMessageId && !messages.some(msg => 
+      msg.messageId === passiveIncomeMessageId && 
+      msg.passiveIncomeOptions && 
+      msg.passiveIncomeOptions.length > 0
+    )) {
       setPassiveIncomeMessageId(null);
       setPassiveIncomeHandlers(null);
     }
@@ -880,10 +890,12 @@ export default function ChatInterface() {
     console.log('isAuthenticated:', isAuthenticated);
     console.log('walletAddress:', walletAddress);
 
+    // Add a message with loading indicator
+    const lendingMsgId = generateMessageId();
     setMessages(prev => [...prev, {
       role: "assistant",
-      content: `Lending ${lendingAmount} ${lendingToken?.symbol} at ${selectedPool?.apy}% APY... Please approve the transaction in your wallet.`,
-      messageId: generateMessageId()
+      content: `<div class='flex items-center gap-2'><span>Processing your lending request of ${lendingAmount} ${lendingToken?.symbol} at ${selectedPool?.apy}% APY</span><span class='animate-pulse'>...</span><div class='ml-2 h-4 w-4 animate-spin rounded-full border-2 border-solid border-brand-purple border-t-transparent'></div></div>`,
+      messageId: lendingMsgId
     }]);
 
     try {
@@ -906,6 +918,16 @@ export default function ChatInterface() {
       // Use either Privy wallet address or Solana wallet public key
       const userPublicKey = walletAddress || publicKey?.toString();
 
+      // Update the message to inform user to approve the transaction
+      setMessages(prev => prev.map(msg =>
+        msg.messageId === lendingMsgId
+          ? { 
+              ...msg, 
+              content: `<div class='flex items-center gap-2'><span>Please approve the transaction in your wallet</span><span class='animate-pulse'>...</span><div class='ml-2 h-4 w-4 animate-spin rounded-full border-2 border-solid border-brand-purple border-t-transparent'></div></div>` 
+            }
+          : msg
+      ));
+
       // Create a callback for sending the transaction based on available wallet
       const sendTx = async (transaction: VersionedTransaction): Promise<string> => {
         const connection = getAlchemyConnection();
@@ -919,6 +941,16 @@ export default function ChatInterface() {
         }
       };
 
+      // Update the message to show transaction is processing
+      setMessages(prev => prev.map(msg =>
+        msg.messageId === lendingMsgId
+          ? { 
+              ...msg, 
+              content: `<div class='flex items-center gap-2'><span>Processing your transaction</span><span class='animate-pulse'>...</span><div class='ml-2 h-4 w-4 animate-spin rounded-full border-2 border-solid border-brand-purple border-t-transparent'></div></div>` 
+            }
+          : msg
+      ));
+
       // Use the extracted service function to handle the lending logic
       const signature = await submitSolendLend(
         selectedPool.pool,
@@ -927,18 +959,27 @@ export default function ChatInterface() {
         sendTx
       );
 
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: `Successfully lent ${lendingAmount} ${lendingToken?.symbol} on Solend! Transaction signature: ${signature}. You are now earning ${selectedPool.apy}% APY.`,
-        messageId: generateMessageId()
-      }]);
+      // Update the loading message with success and a link to the transaction
+      setMessages(prev => prev.map(msg =>
+        msg.messageId === lendingMsgId
+          ? { 
+              ...msg, 
+              content: `Successfully lent ${lendingAmount} ${lendingToken?.symbol} on Solend! [View transaction](https://solscan.io/tx/${signature}?cluster=devnet). You are now earning ${selectedPool.apy}% APY.` 
+            }
+          : msg
+      ));
     } catch (e) {
       console.error('Lending error:', e);
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: `Lending failed: ${e instanceof Error ? e.message : 'Unknown error'}`,
-        messageId: generateMessageId()
-      }]);
+      
+      // Update the loading message with the error
+      setMessages(prev => prev.map(msg =>
+        msg.messageId === lendingMsgId
+          ? { 
+              ...msg, 
+              content: `Lending failed: ${e instanceof Error ? e.message : 'Unknown error'}` 
+            }
+          : msg
+      ));
     } finally {
       // Clear all lending-related state
       setLendingAmount(null);
@@ -1043,7 +1084,7 @@ export default function ChatInterface() {
         }
 
         case "view_portfolio":
-          // TODO: Implement portfolio view logic
+          // Process message to hide wallet addresses 
           setMessages(prev => [...prev, {
             role: "assistant",
             content: llmResponse.message,
@@ -1052,6 +1093,7 @@ export default function ChatInterface() {
           break;
 
         default:
+          // Always hide wallet addresses in messages
           setMessages(prev => [...prev, {
             role: "assistant",
             content: llmResponse.message,
@@ -1061,7 +1103,7 @@ export default function ChatInterface() {
     } catch (error) {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "I'm having trouble understanding. Please try again or use the buttons below.",
+        content: "I'm having trouble understanding. Please try again.",
         messageId: generateMessageId()
       }]);
     } finally {
@@ -1080,19 +1122,19 @@ export default function ChatInterface() {
   // Update condition to check both Solana wallet adapter and Privy wallet
   if (!connected && !isAuthenticated) {
     return (
-      <div className="flex-1 flex items-center justify-center p-4 h-screen w-full">
+      <div className="flex-1 flex items-center justify-center p-4 h-screen w-full bg-gradient-main">
         <div className="text-center">
-          <p className="text-white mb-4">Please connect your Solana wallet to get started.</p>
+          <p className="text-foreground mb-4">Please connect your Solana wallet to get started.</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-screen w-full">
-      {/* Messages Area - Made scrollable with fixed height */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-36">
-        <div className="w-full">
+    <div className="flex flex-col h-screen w-full overflow-hidden">
+      {/* Messages Area - Single scrollable container with padding for input area */}
+      <div className="flex-1 overflow-y-auto bg-gradient-main">
+        <div className="w-full p-4 space-y-4 pb-36">
           {messages.map((message, index) => (
             <ChatMessage
               key={message.messageId || index}
@@ -1155,14 +1197,14 @@ export default function ChatInterface() {
 
           {isTyping && (
             <div className="flex justify-start">
-              <div className="bg-[#252C3B] rounded-lg p-3">
+              <div className="typing-indicator rounded-lg p-3">
                 <div className="flex space-x-2">
-                  <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce" />
-                  <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce delay-100" />
-                  <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce delay-200" />
+                  <div className="w-2 h-2 bg-brand-purple rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-brand-purple rounded-full animate-bounce delay-100" />
+                  <div className="w-2 h-2 bg-brand-purple rounded-full animate-bounce delay-200" />
                 </div>
               </div>
-            </div>
+            </div>  
           )}
 
           <div ref={messagesEndRef} />
@@ -1170,7 +1212,7 @@ export default function ChatInterface() {
       </div>
 
       {/* Input Area and Quick Actions - Fixed at bottom */}
-      <div className="fixed bottom-0 left-64 right-0 bg-[#0D1117] border-t border-gray-700 shadow-lg">
+      <div className="fixed bottom-0 left-64 right-0 bg-white border-t border-brand-purple/20 shadow-lg">
         <div className="w-full">
           <ChatInputArea
             input={input}

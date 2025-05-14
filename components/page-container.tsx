@@ -17,7 +17,7 @@ export function PageContainer({
   children 
 }: PageContainerProps) {
   return (
-    <div className="flex flex-1 flex-col h-full overflow-auto">
+    <div className="flex flex-1 flex-col h-full overflow-auto bg-gradient-main">
       <Header 
         title={title} 
         subtitle={subtitle} 

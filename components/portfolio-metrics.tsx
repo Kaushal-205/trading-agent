@@ -2,14 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Wallet, TrendingUp, Coins } from "lucide-react"
-import { useWallet } from "@solana/wallet-adapter-react"
+import { Wallet, TrendingUp, Coins, Loader2 } from "lucide-react"
 import { Connection, LAMPORTS_PER_SOL, PublicKey, clusterApiUrl } from "@solana/web3.js"
-import { useWalletAuth } from "./solana/wallet-auth-provider"
+import { usePrivyAuth } from "@/components/privy/privy-auth-provider"
 
 export function PortfolioMetrics() {
-  const { publicKey } = useWallet()
-  const { isAuthenticated } = useWalletAuth()
+  const { isAuthenticated, walletAddress } = usePrivyAuth()
   const [solBalance, setSolBalance] = useState<number>(0)
   const [stakedSol, setStakedSol] = useState<number>(0)
   const [earnedRewards, setEarnedRewards] = useState<number>(0)
@@ -20,7 +18,7 @@ export function PortfolioMetrics() {
 
   useEffect(() => {
     const fetchSolanaData = async () => {
-      if (!publicKey || !isAuthenticated) {
+      if (!walletAddress || !isAuthenticated) {
         setLoading(false)
         return
       }
@@ -29,77 +27,48 @@ export function PortfolioMetrics() {
         setLoading(true)
         setError(null)
         
-        // For development purposes, use a simulated balance instead of real API calls
-        // This avoids the 403 error from rate-limited or restricted Solana RPCs
-        const simulateData = () => {
-          // Simulate a SOL balance (between 2-15 SOL)
-          const mockBalance = 8.45
-          setSolBalance(mockBalance)
-          
-          // Simulate staked SOL as 70% of total balance
-          const stakedAmount = mockBalance * 0.7
-          setStakedSol(stakedAmount)
-
-          // Simulate rewards (5% of staked amount)
-          const simulatedRewards = stakedAmount * 0.05
-          setEarnedRewards(simulatedRewards)
-          
-          // Daily rewards
-          const dailyRewardAmount = simulatedRewards / 30
-          setDailyRewards(dailyRewardAmount)
-        }
-
-        // Try to get real data first
-        try {
-          // Use a more reliable RPC endpoint
-          // Options:
-          // 1. Use a more reliable public endpoint
-          // 2. Consider using a dedicated RPC provider like Helius, QuickNode or Alchemy in production
-          const rpcEndpoints = [
-            clusterApiUrl('devnet'), // Primary devnet endpoint
-            "https://api.devnet.solana.com", // Backup devnet endpoint
-            "https://devnet.solana.rpcpool.com" // Another devnet backup
-          ];
-          
-          let connection;
-          let balance = 0;
-          let success = false;
-          
-          // Try each endpoint until one works
-          for (const endpoint of rpcEndpoints) {
-            try {
-              connection = new Connection(endpoint, 'confirmed');
-              balance = await connection.getBalance(publicKey);
-              success = true;
-              console.log("Connected successfully using:", endpoint);
-              break;
-            } catch (err) {
-              console.warn(`Failed to connect to ${endpoint}:`, err);
-            }
+        // Get real data using clusterAPI
+        const rpcEndpoints = [
+          clusterApiUrl('devnet'), // Primary devnet endpoint
+          "https://api.devnet.solana.com", // Backup devnet endpoint
+          "https://devnet.solana.rpcpool.com" // Another devnet backup
+        ];
+        
+        let connection;
+        let balance = 0;
+        let success = false;
+        
+        // Try each endpoint until one works
+        for (const endpoint of rpcEndpoints) {
+          try {
+            connection = new Connection(endpoint, 'confirmed');
+            balance = await connection.getBalance(new PublicKey(walletAddress));
+            success = true;
+            console.log("Connected successfully using:", endpoint);
+            break;
+          } catch (err) {
+            console.warn(`Failed to connect to ${endpoint}:`, err);
           }
-          
-          if (success) {
-            const solBalanceValue = balance / LAMPORTS_PER_SOL;
-            setSolBalance(solBalanceValue);
-            
-            // For demo purposes, still simulate the staking data
-            const stakedAmount = solBalanceValue * 0.7;
-            setStakedSol(stakedAmount);
-            const simulatedRewards = stakedAmount * 0.05;
-            setEarnedRewards(simulatedRewards);
-            const dailyRewardAmount = simulatedRewards / 30;
-            setDailyRewards(dailyRewardAmount);
-          } else {
-            console.error("All RPC endpoints failed, using simulated data");
-            throw new Error("All RPC endpoints failed");
-          }
-        } catch (error) {
-          console.error("Error fetching from Solana RPC, using simulated data:", error);
-          // Fall back to simulated data
-          simulateData();
         }
         
-        // Fetch SOL price regardless of whether we got real balance data
+        if (success) {
+          const solBalanceValue = balance / LAMPORTS_PER_SOL;
+          setSolBalance(solBalanceValue);
+          
+          // Set staking and rewards to zero as we're not simulating anymore
+          setStakedSol(0);
+          setEarnedRewards(0);
+          setDailyRewards(0);
+        } else {
+          console.error("All RPC endpoints failed");
+          setError("Failed to connect to Solana network. Please try again later.");
+          setSolBalance(0);
+          setStakedSol(0);
+          setEarnedRewards(0);
+          setDailyRewards(0);
+        }
+        
+        // Fetch SOL price 
         try {
           const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd");
           const data = await response.json();
@@ -114,24 +83,17 @@ export function PortfolioMetrics() {
         setLoading(false);
       } catch (error) {
         console.error("Error fetching Solana data:", error);
-        setError("Failed to load portfolio data. Using simulated values.");
-        
-        // Provide fallback data
-        const mockBalance = 8.45;
-        setSolBalance(mockBalance);
-        const stakedAmount = mockBalance * 0.7;
-        setStakedSol(stakedAmount);
-        const simulatedRewards = stakedAmount * 0.05;
-        setEarnedRewards(simulatedRewards);
-        const dailyRewardAmount = simulatedRewards / 30;
-        setDailyRewards(dailyRewardAmount);
-        
+        setError("Failed to load portfolio data.");
+        setSolBalance(0);
+        setStakedSol(0);
+        setEarnedRewards(0);
+        setDailyRewards(0);
         setLoading(false);
       }
     }
 
     fetchSolanaData()
-  }, [publicKey, isAuthenticated])
+  }, [walletAddress, isAuthenticated])
 
   // Function to format SOL amount based on value
   const formatSolAmount = (amount: number) => {
@@ -144,11 +106,10 @@ export function PortfolioMetrics() {
   if (loading) {
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="min-h-[120px]">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Loading Solana Data...</CardTitle>
-          </CardHeader>
-        </Card>
+        <div className="md:col-span-2 lg:col-span-3 rounded-md border p-8 flex items-center justify-center min-h-[120px] bg-card">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mr-2" />
+          <span>Loading balance data...</span>
+        </div>
       </div>
     )
   }
@@ -194,7 +155,7 @@ export function PortfolioMetrics() {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{formatSolAmount(earnedRewards)} SOL</div>
-          <p className="text-xs text-emerald-500">+{formatSolAmount(dailyRewards)} SOL (24h)</p>
+          <p className="text-xs text-brand-purple">+{formatSolAmount(dailyRewards)} SOL (24h)</p>
         </CardContent>
       </Card>
     </div>

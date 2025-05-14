@@ -1,4 +1,4 @@
-import { Connection } from '@solana/web3.js';
+import { Connection, clusterApiUrl } from '@solana/web3.js';
 import { LLMResponse } from './types';
 
 // System prompt for the LLM
@@ -30,16 +30,10 @@ export function generateMessageId(): string {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 
-// Add a helper function to create the Alchemy connection
-export const getAlchemyConnection = (): Connection => {
-  return new Connection(
-    'https://api.devnet.solana.com',
-    {
-      commitment: 'confirmed',
-      wsEndpoint: undefined // Disable WebSocket for this connection
-    }
-  );
-};
+export function getAlchemyConnection(): Connection {
+    // We'll default to devnet for now
+    return new Connection(clusterApiUrl('devnet'));
+  }
 
 // Improved helper to extract token symbol from user input for yield intent
 export function extractTokenSymbolFromYieldQuery(query: string): string | null {

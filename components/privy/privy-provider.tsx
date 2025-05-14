@@ -13,7 +13,7 @@ export const PrivyWalletProvider: FC<PrivyWalletProviderProps> = ({ children }) 
   const router = useRouter()
 
   // Replace this with your actual Privy App ID from the Privy dashboard
-  const PRIVY_APP_ID = "cmal2yx6701cil70l1o884t55"
+  const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID!;
 
   return (
     <PrivyProvider

@@ -127,9 +127,9 @@ export function YieldOptions() {
   const getRiskIcon = (risk: string) => {
     switch (risk) {
       case "low":
-        return <ShieldCheck className="h-4 w-4 text-emerald-500" />
+        return <ShieldCheck className="h-4 w-4 text-brand-purple" />
       case "medium":
-        return <Shield className="h-4 w-4 text-amber-500" />
+        return <Shield className="h-4 w-4 text-brand-purple/80" />
       case "high":
         return <ShieldAlert className="h-4 w-4 text-rose-500" />
       default:
@@ -140,9 +140,9 @@ export function YieldOptions() {
   const getRiskColor = (risk: string) => {
     switch (risk) {
       case "low":
-        return "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+        return "bg-brand-purple/10 text-brand-purple hover:bg-brand-purple/20"
       case "medium":
-        return "bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"
+        return "bg-brand-purple/10 text-brand-purple/80 hover:bg-brand-purple/20"
       case "high":
         return "bg-rose-500/10 text-rose-500 hover:bg-rose-500/20"
       default:
@@ -163,7 +163,7 @@ export function YieldOptions() {
     return (
       <div className="rounded-md border p-8 text-center min-h-[300px] flex flex-col items-center justify-center bg-card">
         <p className="text-muted-foreground mb-4">No yield options available at the moment.</p>
-        <Button className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600">
+        <Button variant="purple">
           Check back later
         </Button>
       </div>
@@ -173,7 +173,7 @@ export function YieldOptions() {
   return (
     <>
       {error && (
-        <div className="p-2 rounded-md bg-amber-500/20 text-amber-800 text-sm mb-4">
+        <div className="p-2 rounded-md bg-rose-500/10 text-rose-600 text-sm mb-4">
           {error}
         </div>
       )}
@@ -195,12 +195,12 @@ export function YieldOptions() {
             </CardHeader>
             <CardContent>
               <div className="mb-4">
-                <div className="text-3xl font-bold text-emerald-500">{option.apy}% APY</div>
+                <div className="text-3xl font-bold text-brand-purple">{option.apy}% APY</div>
               </div>
               <p className="text-sm text-muted-foreground">{option.description}</p>
             </CardContent>
             <CardFooter>
-              <Button className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600">
+              <Button variant="purple" className="w-full">
                 Stake Now
               </Button>
             </CardFooter>

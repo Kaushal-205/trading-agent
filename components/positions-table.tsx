@@ -153,7 +153,7 @@ export function PositionsTable() {
     return (
       <div className="rounded-md border p-8 text-center min-h-[200px] flex flex-col items-center justify-center bg-card">
         <p className="text-muted-foreground mb-4">No positions found.</p>
-        <Button className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600">
+        <Button variant="purple">
           Stake SOL to get started
         </Button>
       </div>
@@ -203,7 +203,7 @@ export function PositionsTable() {
               <TableCell className="font-medium">{position.protocol}</TableCell>
               <TableCell>{position.amount.toFixed(2)}</TableCell>
               <TableCell>
-                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500">
+                <Badge variant="outline" className="bg-brand-purple/10 text-brand-purple">
                   {position.apy.toFixed(1)}%
                 </Badge>
               </TableCell>

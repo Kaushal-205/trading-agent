@@ -11,9 +11,8 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
-import { ThemeToggle } from "@/components/theme-toggle"
-import { AuthStatus } from "@/components/auth-status"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
+import Image from "next/image"
 
 export function AppSidebar() {
   const router = useRouter()
@@ -65,30 +64,29 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar>
-      <SidebarHeader className="flex items-center justify-center py-6">
+    <Sidebar className="app-sidebar bg-gradient-main border-r border-brand-purple/20">
+      <SidebarHeader className="sidebar-header">
         <div 
-          className="flex items-center space-x-2 cursor-pointer"
+          className="flex items-center justify-center cursor-pointer"
           onClick={handleLogoClick}
         >
-          <div className="h-8 w-8 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center justify-center">
-            <span className="font-bold text-black">YA</span>
-          </div>
-          <span className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-            YieldAgent
-          </span>
+          <Image
+            src="/How3logo.svg"
+            alt="How3 Logo"
+            width={120}
+            height={36}
+            priority
+          />
         </div>
       </SidebarHeader>
       <SidebarContent>
-        <div className="px-3 py-2">
-          <AuthStatus />
-        </div>
         <SidebarMenu>
           {menuItems.map((item) => (
             <SidebarMenuItem key={item.label}>
               <SidebarMenuButton 
                 asChild 
                 isActive={isActive(item.label)}
+                className={isActive(item.label) ? "bg-brand-purple/10 text-brand-purple" : "text-black hover:bg-brand-purple/5 hover:text-brand-purple"}
               >
                 <button 
                   onClick={() => handleNavigation(item.href)}
@@ -96,17 +94,13 @@ export function AppSidebar() {
                 >
                   <item.icon className="mr-2 h-4 w-4" />
                   <span>{item.label}</span>
+                  
                 </button>
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}
         </SidebarMenu>
       </SidebarContent>
-      <SidebarFooter className="p-4">
-        <div className="space-y-4">
-          <ThemeToggle />
-        </div>
-      </SidebarFooter>
     </Sidebar>
   )
 }

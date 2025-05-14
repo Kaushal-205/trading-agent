@@ -14,7 +14,7 @@ export function Header({ title, subtitle, rightContent }: HeaderProps) {
     <div className="p-4 border-b border-border">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-xl font-semibold">{title}</h1>
+          <h1 className="text-xl font-semibold text-brand-black">{title}</h1>
           {subtitle && <p className="text-muted-foreground text-sm mt-1">{subtitle}</p>}
         </div>
         
