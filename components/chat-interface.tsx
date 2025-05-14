@@ -1,6 +1,6 @@
 "use client"
 import { useRef, useEffect } from "react"
-import { VersionedTransaction } from "@solana/web3.js"
+import { Connection, clusterApiUrl, PublicKey, VersionedTransaction } from "@solana/web3.js"
 import { cn } from "@/lib/utils"
 import tokenList from '../token.json'
 import config from '../lib/config'
@@ -218,7 +218,7 @@ export default function ChatInterface() {
     });
   };
 
-  //  Add effect to listen for payment success message from payment window
+  // Add effect to listen for payment success message from payment window
   useEffect(() => {
     // Handler for receiving messages from payment success window
     const handlePaymentMessage = async (event: MessageEvent) => {
@@ -232,37 +232,84 @@ export default function ChatInterface() {
         console.log('Received payment complete message:', event.data);
         
         try {
-          // Fetch updated wallet balance
-          console.log('walletAddress', walletAddress);
-          const response = await fetch(`${config.apiUrl}/api/sol-balance?walletAddress=${walletAddress}`);
+          // Show loading message first
+          const loadingMsgId = generateMessageId();
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: "Processing your SOL purchase, transferring tokens to your wallet...",
+            messageId: loadingMsgId
+          }]);
           
-          if (response.ok) {  
-            const balanceData = await response.json();
+          // Ensure we have a wallet address, prefer the one from the event if available
+          const targetWalletAddress = walletAddress || event.data.walletAddress;
+          
+          if (!targetWalletAddress) {
+            throw new Error("No wallet address available for transfer");
+          }
+          
+          console.log('Using wallet address for transfer:', targetWalletAddress);
+          
+          // Call our new transfer-sol API endpoint
+          const transferResponse = await fetch(`${config.apiUrl}/api/transfer-sol`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              walletAddress: targetWalletAddress,
+              amount: 0.1 // Default SOL amount to transfer
+            }),
+          });
+          
+          const transferResult = await transferResponse.json();
+          
+          if (transferResponse.ok && transferResult.status === 'success') {
+            // Update loading message with success and transaction details
+            setMessages(prev => prev.map(msg =>
+              msg.messageId === loadingMsgId
+                ? { 
+                    ...msg, 
+                    content: `SOL successfully sent to your wallet! [View the transaction on Solana Explorer](${transferResult.explorerLink})` 
+                  }
+                : msg
+            ));
             
-            // Show success message with updated balance
-            setMessages(prev => [...prev, {
-              role: "assistant",
-              content: `Your SOL purchase was successful! Your wallet now contains ${balanceData.balance.toFixed(9)} SOL.`,
-              messageId: generateMessageId()
-            }]);
+            // Fetch balance directly from Solana cluster
+            try {
+              const connection = new Connection(clusterApiUrl('devnet'));
+              const balance = await connection.getBalance(new PublicKey(targetWalletAddress));
+              const solBalance = balance / 1000000000; // Convert lamports to SOL
+              
+              // Show balance info message
+              setMessages(prev => [...prev, {
+                role: "assistant",
+                content: `Your wallet now contains ${solBalance.toFixed(9)} SOL.`,
+                messageId: generateMessageId()
+              }]);
+            } catch (balanceError) {
+              console.error('Error fetching wallet balance:', balanceError);
+            }
             
             // Offer passive income options for SOL after purchase
             setTimeout(() => {
               handlePassiveIncomePrompt("SOL");
             }, 1000);
           } else {
-            // Show generic success message if balance check fails
-            setMessages(prev => [...prev, {
-              role: "assistant",
-              content: "Your SOL purchase was successful! The tokens have been sent to your wallet.",
-              messageId: generateMessageId()
-            }]);
+            // Show error message
+            setMessages(prev => prev.map(msg =>
+              msg.messageId === loadingMsgId
+                ? { 
+                    ...msg, 
+                    content: `There was an error with your SOL transfer: ${transferResult.error || 'Unknown error'}` 
+                  }
+                : msg
+            ));
           }
         } catch (error) {
-          console.error('Error fetching wallet balance:', error);
+          console.error('Error processing SOL transfer:', error);
           setMessages(prev => [...prev, {
             role: "assistant",
-            content: "Your SOL purchase was successful! Please check your wallet for the updated balance.",
+            content: `Error processing your SOL purchase: ${error instanceof Error ? error.message : 'Unknown error'}`,
             messageId: generateMessageId()
           }]);
         }
@@ -286,81 +333,110 @@ export default function ChatInterface() {
 
     if (status === 'success' && sessionId) {
       // Show initial message about successful payment
+      const loadingMsgId = generateMessageId();
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Your SOL purchase was successful! Checking transaction status...",
-        messageId: generateMessageId()
+        content: "Your SOL purchase was successful! Processing your transaction...",
+        messageId: loadingMsgId
       }]);
 
       // Clean up the URL
       window.history.replaceState({}, '', '/chat');
 
-      // Start checking payment status
-      const checkPaymentStatus = async () => {
+      // Transfer SOL directly instead of checking payment status
+      const processDirectTransfer = async () => {
         try {
-          const response = await fetch(`${config.apiUrl}/api/payment-status/${sessionId}`);
-          if (!response.ok) {
-            throw new Error('Failed to fetch payment status');
+          // Ensure we have a wallet address
+          if (!walletAddress && !publicKey) {
+            throw new Error("No wallet address available for transfer");
           }
-
-          const data = await response.json();
-          console.log('Payment status data:', data);
-
-          // Check if SOL has been transferred
-          if (data.status === 'sol_transferred' || data.status === 'refunded') {
-            // Show success message with link to explorer
-            const successMsgId = generateMessageId();
-            setMessages(prev => [...prev.filter(msg =>
-              msg.content !== "Your SOL purchase was successful! Checking transaction status..."),
-            {
-              role: "assistant",
-              content: `SOL successfully sent to your wallet! [View the transaction on Solana Explorer](${data.explorerLink})`,
-              messageId: successMsgId
+          
+          // Use wallet address from state
+          const targetWalletAddress = walletAddress || (publicKey ? publicKey.toString() : null);
+          
+          if (!targetWalletAddress) {
+            throw new Error("No wallet address available for transfer");
+          }
+          
+          console.log('Using wallet address for direct transfer:', targetWalletAddress);
+          
+          // Call our transfer-sol API endpoint
+          const transferResponse = await fetch(`${config.apiUrl}/api/transfer-sol`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              walletAddress: targetWalletAddress,
+              amount: 0.1 // Default SOL amount to transfer
+            }),
+          });
+          
+          const transferResult = await transferResponse.json();
+          
+          if (transferResponse.ok && transferResult.status === 'success') {
+            // Update the loading message with success and explorer link
+            setMessages(prev => prev.map(msg =>
+              msg.messageId === loadingMsgId
+                ? { 
+                    ...msg, 
+                    content: `SOL successfully sent to your wallet! [View the transaction on Solana Explorer](${transferResult.explorerLink})` 
+                  }
+                : msg
+            ));
+            
+            // Fetch balance directly from Solana cluster
+            try {
+              const connection = new Connection(clusterApiUrl('devnet'));
+              const balance = await connection.getBalance(new PublicKey(targetWalletAddress));
+              const solBalance = balance / 1000000000; // Convert lamports to SOL
+              
+              // Show balance info message
+              setMessages(prev => [...prev, {
+                role: "assistant",
+                content: `Your wallet now contains ${solBalance.toFixed(9)} SOL.`,
+                messageId: generateMessageId()
+              }]);
+            } catch (balanceError) {
+              console.error('Error fetching wallet balance:', balanceError);
             }
-            ]);
-
+            
             // Offer passive income options for SOL after purchase
             setTimeout(() => {
               handlePassiveIncomePrompt("SOL");
             }, 1000);
-
-            return; // Stop checking once transfer is complete
-          } else if (data.status === 'error') {
-            // Show error message
-            setMessages(prev => [...prev.filter(msg =>
-              msg.content !== "Your SOL purchase was successful! Checking transaction status..."),
-            {
-              role: "assistant",
-              content: `There was an error with your SOL transfer: ${data.error || 'Unknown error'}`,
-              messageId: generateMessageId()
-            }
-            ]);
-            return; // Stop checking on error
           } else {
-            // Still processing, check again in a moment
-            setTimeout(checkPaymentStatus, 3000);
+            // Update loading message with error
+            setMessages(prev => prev.map(msg =>
+              msg.messageId === loadingMsgId
+                ? { 
+                    ...msg, 
+                    content: `There was an error with your SOL transfer: ${transferResult.error || 'Unknown error'}` 
+                  }
+                : msg
+            ));
           }
         } catch (error) {
-          console.error('Error checking payment status:', error);
-          setMessages(prev => [...prev.filter(msg =>
-            msg.content !== "Your SOL purchase was successful! Checking transaction status..."),
-          {
-            role: "assistant",
-            content: "There was an error checking your transaction status. Your SOL should arrive shortly.",
-            messageId: generateMessageId()
-          }
-          ]);
+          console.error('Error with direct SOL transfer:', error);
+          setMessages(prev => prev.map(msg =>
+            msg.messageId === loadingMsgId
+              ? { 
+                  ...msg, 
+                  content: `Error processing your SOL purchase: ${error instanceof Error ? error.message : 'Unknown error'}` 
+                }
+              : msg
+          ));
         }
       };
 
-      // Start the status check process
-      checkPaymentStatus();
+      // Start the direct transfer process
+      processDirectTransfer();
 
     } else if (status === 'success') {
       // Fallback for success without session ID
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Your SOL purchase was successful! The tokens will be sent to your wallet on Solana Devnet shortly. You can check your wallet balance in a few minutes.",
+        content: "Your SOL purchase was successful! Processing your transaction...",
         messageId: generateMessageId()
       }]);
       handleSuccess();
@@ -368,10 +444,84 @@ export default function ChatInterface() {
       // Clean up the URL
       window.history.replaceState({}, '', '/chat');
 
-      // Offer passive income options for SOL after purchase
-      setTimeout(() => {
-        handlePassiveIncomePrompt("SOL");
-      }, 1000);
+      // Process direct transfer for this case as well
+      const processDirectTransferFallback = async () => {
+        try {
+          // Ensure we have a wallet address
+          if (!walletAddress && !publicKey) {
+            throw new Error("No wallet address available for transfer");
+          }
+          
+          // Use wallet address from state
+          const targetWalletAddress = walletAddress || (publicKey ? publicKey.toString() : null);
+          
+          if (!targetWalletAddress) {
+            throw new Error("No wallet address available for transfer");
+          }
+          
+          // Call our transfer-sol API endpoint
+          const transferResponse = await fetch(`${config.apiUrl}/api/transfer-sol`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              walletAddress: targetWalletAddress,
+              amount: 0.1 // Default SOL amount to transfer
+            }),
+          });
+          
+          const transferResult = await transferResponse.json();
+          
+          if (transferResponse.ok && transferResult.status === 'success') {
+            // Show success message
+            setMessages(prev => [...prev, {
+              role: "assistant",
+              content: `SOL successfully sent to your wallet! [View the transaction on Solana Explorer](${transferResult.explorerLink})`,
+              messageId: generateMessageId()
+            }]);
+            
+            // Fetch balance directly from Solana cluster
+            try {
+              const connection = new Connection(clusterApiUrl('devnet'));
+              const balance = await connection.getBalance(new PublicKey(targetWalletAddress));
+              const solBalance = balance / 1000000000; // Convert lamports to SOL
+              
+              // Show balance info message
+              setMessages(prev => [...prev, {
+                role: "assistant",
+                content: `Your wallet now contains ${solBalance.toFixed(9)} SOL.`,
+                messageId: generateMessageId()
+              }]);
+            } catch (balanceError) {
+              console.error('Error fetching wallet balance:', balanceError);
+            }
+            
+            // Offer passive income options for SOL after purchase
+            setTimeout(() => {
+              handlePassiveIncomePrompt("SOL");
+            }, 1000);
+          } else {
+            // Show error message
+            setMessages(prev => [...prev, {
+              role: "assistant",
+              content: `There was an error with your SOL transfer: ${transferResult.error || 'Unknown error'}`,
+              messageId: generateMessageId()
+            }]);
+          }
+        } catch (error) {
+          console.error('Error with direct SOL transfer (fallback):', error);
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: `Error processing your SOL purchase: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            messageId: generateMessageId()
+          }]);
+        }
+      };
+      
+      // Start the fallback direct transfer
+      processDirectTransferFallback();
+      
     } else if (status === 'cancel') {
       setMessages(prev => [...prev, {
         role: "assistant",
@@ -382,7 +532,7 @@ export default function ChatInterface() {
       // Clean up the URL
       window.history.replaceState({}, '', '/chat');
     }
-  }, [handleSuccess, handleCancel]);
+  }, [handleSuccess, handleCancel, walletAddress, publicKey, setMessages, generateMessageId, handlePassiveIncomePrompt]);
 
   // Updated effect to handle swap result with proper passive income flow
   useEffect(() => {

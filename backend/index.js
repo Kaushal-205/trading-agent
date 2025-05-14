@@ -254,7 +254,7 @@ app.get('/payment-success', (req, res) => {
 // === 2. Stripe Webhook to fund wallet and initiate refund ===
 app.post('/stripe/webhook', async (req, res) => {
   const sig = req.headers['stripe-signature'];
-  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const endpointSecret = process.env.STRIPE_SECRET_KEY;
 
   let event;
   try {
@@ -376,6 +376,81 @@ app.get('/api/payment-status/:sessionId', async (req, res) => {
   } catch (error) {
     console.error('Error fetching payment status:', error);
     res.status(500).json({ error: 'Failed to retrieve payment status' });
+  }
+});
+
+// Add this new API endpoint before the processSolTransfer function
+// API endpoint to transfer SOL directly to a wallet
+app.post('/api/transfer-sol', async (req, res) => {
+  try {
+    const { walletAddress, amount = SOL_AMOUNT } = req.body;
+    
+    if (!walletAddress) {
+      return res.status(400).json({ 
+        status: 'error', 
+        error: 'Wallet address is required' 
+      });
+    }
+    
+    if (!fundingKeypair) {
+      return res.status(500).json({ 
+        status: 'error', 
+        error: 'Funding wallet not initialized. Check FUNDING_WALLET_SECRET environment variable.' 
+      });
+    }
+    
+    // Connect to Solana
+    const connection = new Connection(clusterApiUrl('devnet'));
+    
+    // Verify the recipient wallet address
+    let recipientPubkey;
+    try {
+      recipientPubkey = new PublicKey(walletAddress);
+    } catch (err) {
+      return res.status(400).json({ 
+        status: 'error', 
+        error: `Invalid wallet address: ${walletAddress}` 
+      });
+    }
+    
+    // Create a transfer transaction
+    const solAmount = amount;
+    const lamports = solAmount * 1000000000; // Convert SOL to lamports
+    
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: fundingKeypair.publicKey,
+        toPubkey: recipientPubkey,
+        lamports,
+      })
+    );
+    
+    // Send and confirm the transaction
+    console.log(`Sending ${solAmount} SOL to ${walletAddress}`);
+    const signature = await sendAndConfirmTransaction(
+      connection,
+      transaction,
+      [fundingKeypair]
+    );
+    
+    console.log(`SOL transfer successful! Transaction signature: ${signature}`);
+    
+    // Create explorer link
+    const explorerLink = `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+    
+    return res.status(200).json({
+      status: 'success',
+      signature,
+      explorerLink,
+      amount: solAmount
+    });
+    
+  } catch (error) {
+    console.error('Error transferring SOL:', error);
+    return res.status(500).json({ 
+      status: 'error', 
+      error: error.message 
+    });
   }
 });
 
@@ -523,40 +598,6 @@ app.post('/api/signup', async (req, res) => {
   } catch (e) {
     console.error('Signup error:', e);
     res.status(500).json({ error: 'Internal error' });
-  }
-});
-
-// Add new endpoint to get wallet SOL balance
-app.get('/api/sol-balance', async (req, res) => {
-  try {
-    console.log('req.query', req.query);
-    const { walletAddress } = req.query;
-    if (!walletAddress) {
-      return res.status(400).json({ error: 'Wallet address is required' });
-    }
-
-    // Connect to Solana devnet
-    const connection = new Connection(clusterApiUrl('devnet'));
-    
-    // Get the current balance
-    let publicKey;
-    try {
-      publicKey = new PublicKey(walletAddress);
-    } catch (err) {
-      return res.status(400).json({ error: 'Invalid wallet address' });
-    }
-    
-    const balance = await connection.getBalance(publicKey);
-    const solBalance = balance / 1000000000; // Convert lamports to SOL
-    
-    res.json({ 
-      walletAddress, 
-      balance: solBalance,
-      lamports: balance
-    });
-  } catch (error) {
-    console.error('Error fetching SOL balance:', error);
-    res.status(500).json({ error: 'Failed to fetch wallet balance' });
   }
 });
 
