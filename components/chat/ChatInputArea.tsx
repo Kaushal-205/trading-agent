@@ -54,7 +54,7 @@ export function ChatInputArea({
           onChange={(e) => onInputChange(e.target.value)}
           onKeyPress={(e) => e.key === "Enter" && onSend()}
           placeholder="Type your message..."
-          className="flex-1 bg-[#1E2533] border-[#252C3B] text-white focus:border-[#34C759] py-6"
+          className="flex-1 bg-[#1E2533] border-[#252C3B] text-white focus:border-[#34C759] py-4"
         />
         <Button
           onClick={onSend}

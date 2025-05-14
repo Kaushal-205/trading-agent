@@ -6,8 +6,62 @@ const BN = require('bn.js');
 const { Buffer } = require('buffer');
 const Stripe = require('stripe');
 const crypto = require('crypto');
-const bs58 = require('bs58');
+
+// First try to load bs58 from direct package
+let bs58;
+try {
+  bs58 = require('bs58');
+  console.log("BS58 loaded directly:", typeof bs58, typeof bs58.decode);
+} catch (err) {
+  console.error("Failed to load bs58 library directly:", err.message);
+  // Create a fallback implementation
+  bs58 = {
+    decode: null // We'll implement this later
+  };
+}
+
 require('dotenv').config();
+
+// Fallback Base58 decoder implementation
+if (typeof bs58.decode !== 'function') {
+  console.log("Using fallback Base58 decoder implementation");
+
+  // This is the Base58 alphabet (bitcoin alphabet)
+  const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const ALPHABET_MAP = {};
+  for (let i = 0; i < ALPHABET.length; i++) {
+    ALPHABET_MAP[ALPHABET.charAt(i)] = i;
+  }
+  const BASE = ALPHABET.length;
+
+  // Implement a basic base58 decoder
+  bs58.decode = function (str) {
+    if (str.length === 0) return Buffer.alloc(0);
+
+    // Convert from Base58 to decimal
+    let num = 0n;
+    for (let i = 0; i < str.length; i++) {
+      num = num * BigInt(BASE) + BigInt(ALPHABET_MAP[str[i]]);
+    }
+
+    // Convert to bytes
+    let bytes = [];
+    while (num > 0n) {
+      bytes.unshift(Number(num % 256n));
+      num = num / 256n;
+    }
+
+    // Add leading zeros
+    for (let i = 0; i < str.length && str[i] === '1'; i++) {
+      bytes.unshift(0);
+    }
+
+    return Buffer.from(bytes);
+  };
+}
+
+// Make sure bs58 is properly initialized
+console.log("BS58 decode function after init:", typeof bs58.decode);
 
 const app = express();
 app.use(cors());
@@ -27,42 +81,75 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 // Load the funding wallet (devnet) from env.
 const FUNDING_SECRET = process.env.FUNDING_WALLET_SECRET;
 let fundingKeypair = null;
+
+// Helper function to create keypair from private key string
+function createKeypairFromPrivateKey(privateKeyString) {
+  try {
+    console.log("Attempting to decode private key...");
+
+    // Convert the private key string to byte array using bs58
+    const secretKey = bs58.decode(privateKeyString);
+    console.log("Decoded key length:", secretKey.length);
+
+    const keypair = Keypair.fromSecretKey(secretKey);
+    console.log("Successfully imported wallet");
+    console.log("Wallet address:", keypair.publicKey.toString());
+    return keypair;
+  } catch (error) {
+    console.error("Error creating keypair from private key:", error);
+    return null;
+  }
+}
+
+// Update the funding wallet loading code
 if (FUNDING_SECRET) {
   try {
-    // Try parsing as JSON array first (original format)
-    if (FUNDING_SECRET.startsWith('[') && FUNDING_SECRET.endsWith(']')) {
-      fundingKeypair = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(FUNDING_SECRET)));
-    } 
-    // If it's a base58 encoded private key string
-    else if (FUNDING_SECRET.length === 88 || FUNDING_SECRET.length === 44) {
-      // For base58 private keys (standard Solana private key format)
-      try {
-        // Properly import bs58 - CommonJS style
-        const bs58 = require('bs58');
-        console.log("BS58 library loaded:", typeof bs58, typeof bs58.decode);
-        
-        const decodedKey = bs58.decode(FUNDING_SECRET);
-        console.log("Decoded key length:", decodedKey.length);
-        fundingKeypair = Keypair.fromSecretKey(decodedKey);
-        console.log("Successfully created keypair from base58 string");
-      } catch (decodeErr) {
-        console.error("Error decoding base58 key:", decodeErr);
-        throw decodeErr;
+    // Try parsing using the bs58 method first (preferred method)
+    fundingKeypair = createKeypairFromPrivateKey(FUNDING_SECRET);
+
+    // If that fails, fall back to other methods
+    if (!fundingKeypair) {
+      // Try parsing as JSON array 
+      if (FUNDING_SECRET.startsWith('[') && FUNDING_SECRET.endsWith(']')) {
+        fundingKeypair = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(FUNDING_SECRET)));
       }
-    } 
-    // If it's a plain hex string
-    else if (FUNDING_SECRET.match(/^[0-9a-fA-F]+$/) && FUNDING_SECRET.length === 128) {
-      // For hex string format (64 bytes = 128 hex chars)
-      const secretKeyBytes = Buffer.from(FUNDING_SECRET, 'hex');
-      fundingKeypair = Keypair.fromSecretKey(secretKeyBytes);
-      console.log("Successfully created keypair from hex string");
-    } 
-    else {
-      console.error("Unrecognized private key format. Please provide a base58 encoded string, hex string, or JSON array");
+      // If it's a hex string
+      else if (FUNDING_SECRET.match(/^[0-9a-fA-F]+$/) && FUNDING_SECRET.length === 128) {
+        const secretKeyBytes = Buffer.from(FUNDING_SECRET, 'hex');
+        fundingKeypair = Keypair.fromSecretKey(secretKeyBytes);
+      }
+      else {
+        console.error("Unrecognized private key format. Please provide a base58 encoded string.");
+      }
     }
   } catch (e) {
     console.error("Failed to load funding wallet secret:", e.message);
-    console.error("Please provide FUNDING_WALLET_SECRET env var as base58 string, hex string, or JSON array");
+    console.error("Please provide FUNDING_WALLET_SECRET env var as base58 string");
+  }
+}
+
+// Helper function to check balance and request an airdrop if needed
+async function ensureWalletFunded(publicKey, connection, minBalance = 2 * 10 ** 9) {
+  try {
+    const balance = await connection.getBalance(publicKey);
+    console.log(`Current wallet balance: ${balance / 10 ** 9} SOL`);
+
+    if (balance < minBalance) {
+      console.log(`Balance below ${minBalance / 10 ** 9} SOL. Requesting airdrop...`);
+      const signature = await connection.requestAirdrop(publicKey, 2 * 10 ** 9);
+      await connection.confirmTransaction(signature);
+
+      // Check balance after airdrop
+      const newBalance = await connection.getBalance(publicKey);
+      console.log(`Airdrop completed. New balance: ${newBalance / 10 ** 9} SOL`);
+      return true;
+    } else {
+      console.log(`Wallet has sufficient balance (${balance / 10 ** 9} SOL)`);
+      return true;
+    }
+  } catch (error) {
+    console.error("Failed to ensure wallet funding:", error);
+    return false;
   }
 }
 
@@ -70,13 +157,14 @@ if (FUNDING_SECRET) {
 if (fundingKeypair) {
   console.log("Funding wallet loaded successfully!");
   console.log("Public Key:", fundingKeypair.publicKey.toString());
-  // Check balance to ensure the wallet has funds
+  // Check balance and ensure the wallet has funds
   const connection = new Connection(clusterApiUrl('devnet'));
-  connection.getBalance(fundingKeypair.publicKey)
-    .then(balance => {
-      console.log(`Wallet balance: ${balance / 1e9} SOL`);
-      if (balance < 100000000) {
-        console.warn("WARNING: Funding wallet has less than 0.1 SOL. Transfers may fail.");
+  ensureWalletFunded(fundingKeypair.publicKey, connection)
+    .then(funded => {
+      if (funded) {
+        console.log("Funding wallet is ready to use");
+      } else {
+        console.warn("WARNING: Failed to fund wallet properly. Transfers may fail.");
       }
     })
     .catch(err => {
@@ -93,9 +181,18 @@ const SOL_AMOUNT = 0.1; // Amount of SOL to transfer (fixed at 0.1 SOL)
 
 // Helper: send SOL on devnet from funding wallet
 async function sendDevnetSol(destination, lamports = 100000000 /* 0.1 SOL */) {
+  console.log("Sending SOL to destination:", destination);
   if (!fundingKeypair) throw new Error("Funding wallet not configured");
   const connection = new Connection(clusterApiUrl('devnet'));
+  
+  // Ensure funding wallet has enough SOL
+  const funded = await ensureWalletFunded(fundingKeypair.publicKey, connection);
+  if (!funded) {
+    throw new Error("Failed to ensure funding wallet has enough SOL");
+  }
+  
   const destPubkey = new PublicKey(destination);
+  console.log(`[SOL TRANSFER] About to send ${lamports / 10 ** 9} SOL to wallet address: ${destination}`);
   const tx = new Transaction().add(
     SystemProgram.transfer({
       fromPubkey: fundingKeypair.publicKey,
@@ -103,8 +200,16 @@ async function sendDevnetSol(destination, lamports = 100000000 /* 0.1 SOL */) {
       lamports,
     })
   );
-  const signature = await sendAndConfirmTransaction(connection, tx, [fundingKeypair]);
-  return signature;
+  
+  try {
+    console.log(`Sending ${lamports / 10 ** 9} SOL to ${destination}`);
+    const signature = await sendAndConfirmTransaction(connection, tx, [fundingKeypair]);
+    console.log(`Transaction successful! Signature: ${signature}`);
+    return signature;
+  } catch (error) {
+    console.error(`Transaction failed: ${error.message}`);
+    throw error;
+  }
 }
 
 // Store payment sessions for refund processing
@@ -120,7 +225,7 @@ app.post('/api/solend-lend', async (req, res) => {
     if (!userPublicKey || typeof userPublicKey !== 'string') return res.status(400).json({ error: 'Missing or invalid userPublicKey' });
     // if (!reserve.liquidity || typeof reserve.liquidity.mintDecimals !== 'number') return res.status(400).json({ error: 'Missing reserve.liquidity.mintDecimals' });
 
-    const connection = new Connection(clusterApiUrl('mainnet-beta'));
+    const connection = new Connection(clusterApiUrl('devnet'));
     const decimals = new BN(pool.reserve.liquidity.mintDecimals);
     const amountBN = new BN(amount).mul(new BN(10).pow(decimals));
     const wallet = { publicKey: new PublicKey(userPublicKey) };
@@ -179,8 +284,8 @@ app.post('/api/solend-lend', async (req, res) => {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     message: 'Backend is running',
     timestamp: new Date().toISOString()
   });
@@ -211,7 +316,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
         {
           price_data: {
             currency: currency,
-            product_data: { 
+            product_data: {
               name: 'Solana Devnet Top-up (0.1 SOL)',
               description: 'Adds 0.1 SOL to your Solana wallet on Devnet. Payment will be refunded after successful transfer.'
             },
@@ -220,7 +325,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
           quantity: 1,
         },
       ],
-      metadata: { 
+      metadata: {
         walletAddress,
         solAmount: SOL_AMOUNT.toString(),
         refundRequired: 'true' // Flag to indicate refund is required after SOL transfer
@@ -264,15 +369,15 @@ app.post('/stripe/webhook', async (req, res) => {
 
   // Process the event
   try {
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const walletAddress = session.metadata?.walletAddress;
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const walletAddress = session.metadata?.walletAddress;
       const refundRequired = session.metadata?.refundRequired === 'true';
       const paymentIntentId = session.payment_intent;
       
       console.log(`Processing payment for session ${session.id}, wallet: ${walletAddress}`);
       
-    if (walletAddress) {
+      if (walletAddress) {
         // Update session status
         if (paymentSessions.has(session.id)) {
           const paymentSession = paymentSessions.get(session.id);
@@ -294,48 +399,11 @@ app.post('/stripe/webhook', async (req, res) => {
           });
         }
 
-        try {
-          // Send SOL to user wallet
-          console.log(`Sending ${SOL_AMOUNT} SOL to wallet ${walletAddress}...`);
-          const txSignature = await sendDevnetSol(walletAddress);
-          console.log(`SOL transfer successful! TX: ${txSignature}`);
-          
-          // Update session status with transaction signature
-          if (paymentSessions.has(session.id)) {
-            const paymentSession = paymentSessions.get(session.id);
-            paymentSession.status = 'sol_transferred';
-            paymentSession.txSignature = txSignature;
-            console.log(`Updated session ${session.id} with transaction signature`);
-          }
-          
-          // Process refund if required
-          if (refundRequired && paymentIntentId) {
-            console.log(`Initiating refund for payment ${paymentIntentId}...`);
-            const refund = await stripe.refunds.create({
-              payment_intent: paymentIntentId,
-              reason: 'requested_by_customer'
-            });
-            
-            console.log(`Refund successful! Refund ID: ${refund.id}`);
-            
-            // Update session status
-            if (paymentSessions.has(session.id)) {
-              const paymentSession = paymentSessions.get(session.id);
-              paymentSession.status = 'refunded';
-              paymentSession.refundId = refund.id;
-              console.log(`Updated session ${session.id} status to refunded`);
-            }
-          }
-        } catch (error) {
-          console.error('Error processing payment aftermath:', error);
-          // Store error in session for debugging
-          if (paymentSessions.has(session.id)) {
-            const paymentSession = paymentSessions.get(session.id);
-            paymentSession.status = 'error';
-            paymentSession.error = error.message || 'Unknown error';
-            console.error(`Updated session ${session.id} with error status:`, error.message);
-          }
-        }
+        // Process SOL transfer asynchronously (don't wait in webhook response)
+        processSolTransfer(session.id, walletAddress, paymentIntentId, refundRequired)
+          .catch(error => {
+            console.error(`Async error processing SOL transfer for session ${session.id}:`, error);
+          });
       } else {
         console.error(`No wallet address found in session ${session.id}`);
       }
@@ -344,9 +412,68 @@ app.post('/stripe/webhook', async (req, res) => {
     console.error('Error processing webhook event:', error);
   }
 
-  // Acknowledge receipt of the event
+  // Acknowledge receipt of the event immediately
   res.json({ received: true });
 });
+
+// Helper function to process SOL transfer and refund
+async function sendDevnetSol(sessionId, walletAddress, paymentIntentId, refundRequired) {
+  try {
+    console.log(`Sending ${SOL_AMOUNT} SOL to wallet ${walletAddress}...`);
+    // Get payment session
+    const paymentSession = paymentSessions.get(sessionId);
+    if (!paymentSession) {
+      throw new Error(`Payment session ${sessionId} not found`);
+    }
+    
+    // Log the wallet address for transparency
+    console.log(`[SOL TRANSFER] Initiating transfer to wallet address: ${walletAddress}`);
+    
+    // Send SOL
+    const txSignature = await sendDevnetSol(walletAddress);
+    console.log(`SOL transfer successful! TX: ${txSignature}`);
+    
+    // Generate Solana Explorer link
+    const explorerLink = `https://explorer.solana.com/tx/${txSignature}?cluster=devnet`;
+    console.log(`Transaction explorer link: ${explorerLink}`);
+    
+    // Update session
+    paymentSession.status = 'sol_transferred';
+    paymentSession.txSignature = txSignature;
+    paymentSession.explorerLink = explorerLink;
+    console.log(`Updated session ${sessionId} with transaction signature`);
+    
+    // Process refund if required
+    if (refundRequired && paymentIntentId) {
+      console.log(`Initiating refund for payment ${paymentIntentId}...`);
+      const refund = await stripe.refunds.create({
+        payment_intent: paymentIntentId,
+        reason: 'requested_by_customer'
+      });
+      
+      console.log(`Refund successful! Refund ID: ${refund.id}`);
+      
+      // Update session status
+      paymentSession.status = 'refunded';
+      paymentSession.refundId = refund.id;
+      console.log(`Updated session ${sessionId} status to refunded`);
+    }
+    
+    return txSignature;
+  } catch (error) {
+    console.error('Error processing SOL transfer:', error);
+    
+    // Store error in session for debugging
+    const paymentSession = paymentSessions.get(sessionId);
+    if (paymentSession) {
+      paymentSession.status = 'error';
+      paymentSession.error = error.message || 'Unknown error';
+      console.error(`Updated session ${sessionId} with error status:`, error.message);
+    }
+    
+    throw error;
+  }
+}
 
 // === 3. Check payment and SOL transfer status ===
 app.get('/api/payment-status/:sessionId', async (req, res) => {
@@ -359,7 +486,15 @@ app.get('/api/payment-status/:sessionId', async (req, res) => {
     if (paymentSessions.has(sessionId)) {
       const sessionData = paymentSessions.get(sessionId);
       console.log(`Found session ${sessionId} in cache:`, sessionData);
-      return res.json(sessionData);
+      
+      // Format response with explorer link if available
+      const response = {
+        ...sessionData,
+        explorerLink: sessionData.explorerLink || null,
+        message: getStatusMessage(sessionData)
+      };
+      
+      return res.json(response);
     }
     
     // If not in cache, try to fetch from Stripe
@@ -397,8 +532,6 @@ app.get('/api/payment-status/:sessionId', async (req, res) => {
       walletAddress: session.metadata?.walletAddress || 'unknown',
       solAmount: session.metadata?.solAmount || '0.1',
       paymentStatus: paymentIntent?.status || 'unknown',
-      // Even though we might not have the transaction in our cache,
-      // at least return what we know from Stripe
       message: "Your SOL has been sent if payment was successful. Transaction details not available."
     });
   } catch (error) {
@@ -406,6 +539,24 @@ app.get('/api/payment-status/:sessionId', async (req, res) => {
     res.status(500).json({ error: 'Failed to retrieve payment status' });
   }
 });
+
+// Helper function to generate appropriate status messages
+function getStatusMessage(sessionData) {
+  switch (sessionData.status) {
+    case 'created':
+      return 'Your payment is being processed.';
+    case 'payment_completed':
+      return 'Payment received. Sending SOL to your wallet...';
+    case 'sol_transferred':
+      return `SOL successfully sent to your wallet! View the transaction on Solana Explorer: ${sessionData.explorerLink}`;
+    case 'refunded':
+      return 'Transaction complete! Your payment has been refunded.';
+    case 'error':
+      return `There was an error: ${sessionData.error}`;
+    default:
+      return 'Processing your transaction...';
+  }
+}
 
 // === 4. Simple signup: generate deterministic keypair from email ===
 app.post('/api/signup', async (req, res) => {
@@ -425,6 +576,46 @@ app.post('/api/signup', async (req, res) => {
   } catch (e) {
     console.error('Signup error:', e);
     res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// === 5. Manual SOL transfer endpoint (for testing) ===
+app.post('/api/manual-transfer', async (req, res) => {
+  try {
+    const { walletAddress, amount } = req.body;
+    
+    if (!walletAddress || typeof walletAddress !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid wallet address' });
+    }
+    
+    // Default to 0.1 SOL if not specified
+    const solAmount = amount ? parseFloat(amount) : 0.1;
+    const lamports = Math.floor(solAmount * 10 ** 9);
+    
+    console.log(`Initiating manual SOL transfer: ${solAmount} SOL to ${walletAddress}`);
+    
+    const txSignature = await sendDevnetSol(walletAddress, lamports);
+    const explorerLink = `https://explorer.solana.com/tx/${txSignature}?cluster=devnet`;
+    
+    console.log(`Manual transfer successful! TX: ${txSignature}`);
+    console.log(`Explorer link: ${explorerLink}`);
+    
+    // Return success response with explorer link
+    res.json({
+      success: true,
+      amount: solAmount,
+      walletAddress,
+      txSignature,
+      explorerLink,
+      message: `Successfully sent ${solAmount} SOL to ${walletAddress}`
+    });
+    
+  } catch (error) {
+    console.error('Error during manual SOL transfer:', error);
+    res.status(500).json({ 
+      error: 'Failed to send SOL',
+      message: error.message || 'Unknown error'
+    });
   }
 });
 

@@ -33,7 +33,7 @@ export function generateMessageId(): string {
 // Add a helper function to create the Alchemy connection
 export const getAlchemyConnection = (): Connection => {
   return new Connection(
-    'https://solana-mainnet.g.alchemy.com/v2/8C_dA-kDjbNFZU_oTAPU05eiHvmh61-K',
+    'https://api.devnet.solana.com',
     {
       commitment: 'confirmed',
       wsEndpoint: undefined // Disable WebSocket for this connection

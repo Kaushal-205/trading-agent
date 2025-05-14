@@ -88,7 +88,7 @@ export function WalletConnectButton() {
         {walletAddress && (
           <DropdownMenuItem
             onClick={() =>
-              window.open(`https://explorer.solana.com/address/${walletAddress}?cluster=mainnet-beta`, "_blank")
+              window.open(`https://explorer.solana.com/address/${walletAddress}?cluster=devnet`, "_blank")
             }
           >
             <ExternalLink className="mr-2 h-4 w-4" />

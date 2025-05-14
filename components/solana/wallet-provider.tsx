@@ -18,7 +18,7 @@ interface SolanaWalletProviderProps {
 
 export const SolanaWalletProvider: FC<SolanaWalletProviderProps> = ({ children }) => {
   // The network can be set to 'devnet', 'testnet', or 'mainnet-beta'
-  const network = WalletAdapterNetwork.Mainnet
+  const network = WalletAdapterNetwork.Devnet
 
   // You can also provide a custom RPC endpoint
   const endpoint = useMemo(() => clusterApiUrl(network), [network])

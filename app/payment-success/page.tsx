@@ -122,12 +122,6 @@ export default function PaymentSuccessPage() {
                     "Waiting for transaction confirmation..."}
                 </div>
               )}
-              
-              {transactionData?.walletAddress && (
-                <p className="text-xs text-gray-400 mt-2 text-center break-all">
-                  Wallet: {transactionData.walletAddress}
-                </p>
-              )}
             </div>
             
             <div className="bg-gray-700 rounded-lg p-4">

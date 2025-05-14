@@ -102,7 +102,7 @@ export class PrivyWalletAdapter extends BaseMessageSignerWalletAdapter {
     
     try {
       // Sign the transaction
-      await this._signTransaction(transaction, new Connection("https://api.mainnet-beta.solana.com"))
+      await this._signTransaction(transaction, new Connection("https://api.devnet.solana.com"))
       return transaction
     } catch (error: any) {
       this.emit("error", error)

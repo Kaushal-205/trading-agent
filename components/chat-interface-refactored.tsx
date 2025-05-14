@@ -218,8 +218,82 @@ export function ChatInterface() {
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const status = searchParams.get('status');
+    const sessionId = searchParams.get('session_id');
     
-    if (status === 'success') {
+    if (status === 'success' && sessionId) {
+      // Show initial message about successful payment
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "Your SOL purchase was successful! Checking transaction status...",
+        messageId: generateMessageId()
+      }]);
+      
+      // Clean up the URL
+      window.history.replaceState({}, '', '/chat');
+      
+      // Start checking payment status
+      const checkPaymentStatus = async () => {
+        try {
+          const response = await fetch(`${config.apiUrl}/api/payment-status/${sessionId}`);
+          if (!response.ok) {
+            throw new Error('Failed to fetch payment status');
+          }
+          
+          const data = await response.json();
+          console.log('Payment status data:', data);
+          
+          // Check if SOL has been transferred
+          if (data.status === 'sol_transferred' || data.status === 'refunded') {
+            // Show success message with link to explorer
+            const successMsgId = generateMessageId();
+            setMessages(prev => [...prev.filter(msg => 
+              msg.content !== "Your SOL purchase was successful! Checking transaction status..."), 
+              {
+                role: "assistant",
+                content: `SOL successfully sent to your wallet! [View the transaction on Solana Explorer](${data.explorerLink})`,
+                messageId: successMsgId
+              }
+            ]);
+            
+            // Offer passive income options for SOL after purchase
+            setTimeout(() => {
+              handlePassiveIncomePrompt("SOL");
+            }, 1000);
+            
+            return; // Stop checking once transfer is complete
+          } else if (data.status === 'error') {
+            // Show error message
+            setMessages(prev => [...prev.filter(msg => 
+              msg.content !== "Your SOL purchase was successful! Checking transaction status..."), 
+              {
+                role: "assistant",
+                content: `There was an error with your SOL transfer: ${data.error || 'Unknown error'}`,
+                messageId: generateMessageId()
+              }
+            ]);
+            return; // Stop checking on error
+          } else {
+            // Still processing, check again in a moment
+            setTimeout(checkPaymentStatus, 3000);
+          }
+        } catch (error) {
+          console.error('Error checking payment status:', error);
+          setMessages(prev => [...prev.filter(msg => 
+            msg.content !== "Your SOL purchase was successful! Checking transaction status..."), 
+            {
+              role: "assistant",
+              content: "There was an error checking your transaction status. Your SOL should arrive shortly.",
+              messageId: generateMessageId()
+            }
+          ]);
+        }
+      };
+      
+      // Start the status check process
+      checkPaymentStatus();
+      
+    } else if (status === 'success') {
+      // Fallback for success without session ID
       setMessages(prev => [...prev, {
         role: "assistant",
         content: "Your SOL purchase was successful! The tokens will be sent to your wallet on Solana Devnet shortly. You can check your wallet balance in a few minutes.",
@@ -227,13 +301,13 @@ export function ChatInterface() {
       }]);
       handleSuccess();
       
+      // Clean up the URL
+      window.history.replaceState({}, '', '/chat');
+      
       // Offer passive income options for SOL after purchase
       setTimeout(() => {
         handlePassiveIncomePrompt("SOL");
       }, 1000);
-      
-      // Clean up the URL
-      window.history.replaceState({}, '', '/chat');
     } else if (status === 'cancel') {
       setMessages(prev => [...prev, {
         role: "assistant",
@@ -594,7 +668,7 @@ export function ChatInterface() {
           const txSignature = result.signature || signature;
           setMessages(prev => prev.map(msg => 
             msg.messageId === processingMsgId 
-                ? { ...msg, content: `Swap successful! [View transaction](https://explorer.solana.com/tx/${txSignature}?cluster=mainnet-beta)` }
+                ? { ...msg, content: `Swap successful! [View transaction](https://explorer.solana.com/tx/${txSignature}?cluster=devnet)` }
               : msg
           ));
           
@@ -904,7 +978,7 @@ export function ChatInterface() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-full pl-64">
+    <div className="flex flex-col h-screen w-full">
       {/* Messages Area - Made scrollable with fixed height */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-36">
         <div className="w-full">

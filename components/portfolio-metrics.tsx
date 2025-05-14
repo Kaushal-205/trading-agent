@@ -56,9 +56,9 @@ export function PortfolioMetrics() {
           // 1. Use a more reliable public endpoint
           // 2. Consider using a dedicated RPC provider like Helius, QuickNode or Alchemy in production
           const rpcEndpoints = [
-            "https://api.mainnet-beta.solana.com", // Try official endpoint first
-            "https://solana-mainnet.rpc.extrnode.com", // Backup public endpoint
-            clusterApiUrl('devnet') // Fallback to devnet as last resort
+            clusterApiUrl('devnet'), // Primary devnet endpoint
+            "https://api.devnet.solana.com", // Backup devnet endpoint
+            "https://devnet.solana.rpcpool.com" // Another devnet backup
           ];
           
           let connection;

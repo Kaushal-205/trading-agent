@@ -903,7 +903,7 @@
 //           const txSignature = result.signature || signature;
 //       setMessages(prev => prev.map(msg => 
 //         msg.messageId === processingMsgId 
-//               ? { ...msg, content: `Swap successful! [View transaction](https://explorer.solana.com/tx/${txSignature}?cluster=mainnet-beta)` }
+//               ? { ...msg, content: `Swap successful! [View transaction](https://explorer.solana.com/tx/${txSignature}?cluster=devnet)` }
 //           : msg
 //       ));
       
