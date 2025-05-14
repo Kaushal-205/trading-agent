@@ -105,7 +105,6 @@ export function AppSidebar() {
       <SidebarFooter className="p-4">
         <div className="space-y-4">
           <ThemeToggle />
-          <SidebarTrigger />
         </div>
       </SidebarFooter>
     </Sidebar>

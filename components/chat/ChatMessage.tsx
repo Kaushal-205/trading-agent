@@ -19,16 +19,16 @@ export function ChatMessage({
   return (
     <div
       className={cn(
-        "flex",
+        "flex w-full mb-4",
         message.role === "user" ? "justify-end" : "justify-start"
       )}
     >
       <div
         className={cn(
-          "max-w-[80%] rounded-lg p-3",
+          "rounded-lg p-4 shadow-sm",
           message.role === "user"
-            ? "bg-[#2C3444] text-white"
-            : "bg-[#252C3B] text-white"
+            ? "bg-[#2C3444] text-white max-w-[70%] rounded-tr-none"
+            : "bg-[#252C3B] text-white max-w-[80%] rounded-tl-none"
         )}
       >
         <ReactMarkdown
@@ -62,7 +62,7 @@ export function ChatMessage({
               </Button>
               <Button
                 variant="outline"
-                className="border-[#34C759] text-[#34C759] flex-1"
+                className="border-[#34C759] text-[#34C759] flex-1 hover:bg-[#252C3B]"
                 onClick={passiveIncomeHandlers.onDecline}
               >
                 I'm okay, thanks
@@ -74,7 +74,7 @@ export function ChatMessage({
                 {message.options.map((option, i) => (
                   <div
                     key={i}
-                    className="bg-[#1E2533] rounded-lg p-3 border border-[#34C759]"
+                    className="bg-[#1E2533] rounded-lg p-3 border border-[#34C759] hover:border-[#2FB350] transition-colors"
                   >
                     <div className="flex justify-between items-center mb-2">
                       <span className="font-semibold">{option.platform}</span>

@@ -895,7 +895,7 @@ export function ChatInterface() {
   // Update condition to check both Solana wallet adapter and Privy wallet
   if (!connected && !isAuthenticated) {
     return (
-      <div className="flex-1 flex items-center justify-center p-4">
+      <div className="flex-1 flex items-center justify-center p-4 h-screen w-full">
         <div className="text-center">
           <p className="text-white mb-4">Please connect your Solana wallet to get started.</p>
         </div>
@@ -904,91 +904,97 @@ export function ChatInterface() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message, index) => (
-          <ChatMessage 
-            key={message.messageId || index}
-            message={message}
-            passiveIncomeMessageId={passiveIncomeMessageId}
-            passiveIncomeHandlers={passiveIncomeHandlers}
-            onExploreYield={handleExploreYield}
-          />
-        ))}
-        
-        {currentQuote && (
-          <div className="flex justify-start">
-            <div className="max-w-[80%]">
-              <QuoteWidget
-                quote={currentQuote}
-                onConfirm={handleConfirmPurchase}
-                onCancel={handleCancelPurchase}
-              />
-            </div>
-          </div>
-        )}
-        
-        {swapQuoteWidget && (
-          <div className="flex justify-start">
-            <div className="max-w-[80%]">
-              <SwapWidget
-                quote={swapQuoteWidget}
-                onConfirm={handleConfirmSwap}
-                onCancel={handleCancelSwap}
-                isProcessing={isSwapProcessing}
-              />
-            </div>
-          </div>
-        )}
-        
-        {solendPools && !showLendingConfirm && (
-          <div className="flex justify-start w-full">
-            <SolendPoolsWidget
-              pools={solendPools}
-              tokenSymbol={lendingToken?.symbol || ''}
-              onSelectPool={(pool) => {
-                setLendingAmount(null);
-                setSelectedPool(pool);
-                setShowLendingConfirm(true);
-              }}
+    <div className="flex flex-col h-screen w-full pl-64">
+      {/* Messages Area - Made scrollable with fixed height */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-36">
+        <div className="w-full">
+          {messages.map((message, index) => (
+            <ChatMessage 
+              key={message.messageId || index}
+              message={message}
+              passiveIncomeMessageId={passiveIncomeMessageId}
+              passiveIncomeHandlers={passiveIncomeHandlers}
+              onExploreYield={handleExploreYield}
             />
-          </div>
-        )}
-        
-        {showLendingConfirm && selectedPool && (
-          <LendingConfirmWidget
-            tokenSymbol={lendingToken?.symbol || ''}
-            pool={selectedPool}
-            amount={lendingAmount}
-            onAmountChange={setLendingAmount}
-            onConfirm={handleLendNow}
-            onCancel={() => setShowLendingConfirm(false)}
-          />
-        )}
-        
-        {isTyping && (
-          <div className="flex justify-start">
-            <div className="bg-[#252C3B] rounded-lg p-3">
-              <div className="flex space-x-2">
-                <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce delay-100" />
-                <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce delay-200" />
+          ))}
+          
+          {currentQuote && (
+            <div className="flex justify-start">
+              <div className="w-full max-w-[700px]">
+                <QuoteWidget
+                  quote={currentQuote}
+                  onConfirm={handleConfirmPurchase}
+                  onCancel={handleCancelPurchase}
+                />
               </div>
             </div>
-          </div>
-        )}
-        
-        <div ref={messagesEndRef} />
+          )}
+          
+          {swapQuoteWidget && (
+            <div className="flex justify-start">
+              <div className="w-full max-w-[700px]">
+                <SwapWidget
+                  quote={swapQuoteWidget}
+                  onConfirm={handleConfirmSwap}
+                  onCancel={handleCancelSwap}
+                  isProcessing={isSwapProcessing}
+                />
+              </div>
+            </div>
+          )}
+          
+          {solendPools && !showLendingConfirm && (
+            <div className="flex justify-start w-full">
+              <SolendPoolsWidget
+                pools={solendPools}
+                tokenSymbol={lendingToken?.symbol || ''}
+                onSelectPool={(pool) => {
+                  setLendingAmount(null);
+                  setSelectedPool(pool);
+                  setShowLendingConfirm(true);
+                }}
+              />
+            </div>
+          )}
+          
+          {showLendingConfirm && selectedPool && (
+            <LendingConfirmWidget
+              tokenSymbol={lendingToken?.symbol || ''}
+              pool={selectedPool}
+              amount={lendingAmount}
+              onAmountChange={setLendingAmount}
+              onConfirm={handleLendNow}
+              onCancel={() => setShowLendingConfirm(false)}
+            />
+          )}
+          
+          {isTyping && (
+            <div className="flex justify-start">
+              <div className="bg-[#252C3B] rounded-lg p-3">
+                <div className="flex space-x-2">
+                  <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce delay-100" />
+                  <div className="w-2 h-2 bg-[#34C759] rounded-full animate-bounce delay-200" />
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
-      {/* Input Area and Quick Actions */}
-      <ChatInputArea
-        input={input}
-        onInputChange={setInput}
-        onSend={handleSend}
-        onQuickAction={handleQuickAction}
-      />
+      {/* Input Area and Quick Actions - Fixed at bottom */}
+      <div className="fixed bottom-0 left-64 right-0 bg-[#0D1117] border-t border-gray-700 shadow-lg">
+        <div className="w-full">
+          <ChatInputArea
+            input={input}
+            onInputChange={setInput}
+            onSend={handleSend}
+            onQuickAction={handleQuickAction}
+          />
+        </div>
+      </div>
     </div>
   )
 } 

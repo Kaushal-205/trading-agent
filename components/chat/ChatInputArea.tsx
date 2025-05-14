@@ -16,8 +16,8 @@ export function ChatInputArea({
   onQuickAction 
 }: ChatInputAreaProps) {
   return (
-    <div className="p-4 border-t border-[#252C3B]">
-      <div className="flex flex-wrap gap-2 mb-4">
+    <div className="p-4 w-full max-w-screen-2xl mx-auto">
+      <div className="flex flex-wrap gap-2 mb-3">
         <Button
           variant="outline"
           className="bg-[#1E2533] text-white hover:bg-[#252C3B]"
@@ -54,13 +54,13 @@ export function ChatInputArea({
           onChange={(e) => onInputChange(e.target.value)}
           onKeyPress={(e) => e.key === "Enter" && onSend()}
           placeholder="Type your message..."
-          className="flex-1 bg-[#1E2533] border-[#252C3B] text-white focus:border-[#34C759]"
+          className="flex-1 bg-[#1E2533] border-[#252C3B] text-white focus:border-[#34C759] py-6"
         />
         <Button
           onClick={onSend}
-          className="bg-[#34C759] hover:bg-[#2FB350] text-white"
+          className="bg-[#34C759] hover:bg-[#2FB350] text-white px-4"
         >
-          <Send className="h-4 w-4" />
+          <Send className="h-5 w-5" />
         </Button>
       </div>
     </div>
