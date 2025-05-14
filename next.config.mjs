@@ -9,6 +9,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Set a reasonably long timeout for static generation
+  staticPageGenerationTimeout: 180,
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {

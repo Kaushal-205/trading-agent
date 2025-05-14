@@ -1,7 +1,6 @@
 "use client"
-import { Header } from "@/components"
 import { AppSidebar } from "@/components/app-sidebar"
-// Removed the import for Header due to the error
+import { Header } from "@/components/header"
 
 export default function ChatLayout({
   children,

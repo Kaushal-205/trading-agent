@@ -13,8 +13,10 @@ import {
 } from "@/components/ui/sidebar"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import Image from "next/image"
+import { Suspense } from "react"
 
-export function AppSidebar() {
+// Create a client component that uses useSearchParams
+function AppSidebarContent() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -64,7 +66,7 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar className="app-sidebar bg-gradient-main border-r border-brand-purple/20">
+    <>
       <SidebarHeader className="sidebar-header">
         <div 
           className="flex items-center justify-center cursor-pointer"
@@ -101,6 +103,48 @@ export function AppSidebar() {
           ))}
         </SidebarMenu>
       </SidebarContent>
+    </>
+  )
+}
+
+// Create a fallback component for the sidebar
+function SidebarFallback() {
+  return (
+    <>
+      <SidebarHeader className="sidebar-header">
+        <div className="flex items-center justify-center">
+          <Image
+            src="/How3logo.svg"
+            alt="How3 Logo"
+            width={120}
+            height={36}
+            priority
+          />
+        </div>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarMenu>
+          {/* Placeholder menu items */}
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild className="text-black">
+              <button className="flex items-center w-full">
+                <Home className="mr-2 h-4 w-4" />
+                <span>Loading...</span>
+              </button>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarContent>
+    </>
+  )
+}
+
+export function AppSidebar() {
+  return (
+    <Sidebar className="app-sidebar bg-gradient-main border-r border-brand-purple/20">
+      <Suspense fallback={<SidebarFallback />}>
+        <AppSidebarContent />
+      </Suspense>
     </Sidebar>
   )
 }

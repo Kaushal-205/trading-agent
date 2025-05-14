@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from 'react';
+import { Suspense } from 'react';
 
-export default function PaymentCancelledPage() {
+function PaymentCancelledContent() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-900 text-white p-4">
       <div className="max-w-md w-full bg-gray-800 rounded-lg shadow-lg p-6">
@@ -29,5 +29,13 @@ export default function PaymentCancelledPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PaymentCancelledPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <PaymentCancelledContent />
+    </Suspense>
   );
 } 
