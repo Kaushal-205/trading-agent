@@ -13,7 +13,7 @@ export function SwapWidget({ quote, onConfirm, onCancel, isProcessing = false }:
   return (
     <div className="bg-[#1E2533] rounded-lg p-4 border border-[#34C759] mt-4">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-white">Jupiter Swap</h3>
+        <h3 className="text-lg font-semibold text-white">Raydium Swap</h3>
         <span className="text-[#34C759] text-lg font-bold">
           {quote.outputAmount} {quote.outputToken}
         </span>
@@ -38,7 +38,7 @@ export function SwapWidget({ quote, onConfirm, onCancel, isProcessing = false }:
         </div>
         <div className="flex justify-between">
           <span>Network:</span>
-          <span className="text-white">Solana</span>
+          <span className="text-white">Solana Devnet</span>
         </div>
       </div>
 

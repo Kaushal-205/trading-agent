@@ -9,11 +9,11 @@ interface ChatInputAreaProps {
   onQuickAction: (action: string) => void;
 }
 
-export function ChatInputArea({ 
-  input, 
-  onInputChange, 
-  onSend, 
-  onQuickAction 
+export function ChatInputArea({
+  input,
+  onInputChange,
+  onSend,
+  onQuickAction
 }: ChatInputAreaProps) {
   return (
     <div className="p-4 w-full max-w-screen-2xl mx-auto">

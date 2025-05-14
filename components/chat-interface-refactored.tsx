@@ -6,12 +6,13 @@ import tokenList from '../token.json'
 import config from '../lib/config'
 import { getAlchemyConnection, processLLMResponse, generateMessageId, extractTokenSymbolFromYieldQuery } from './chat/utils'
 import { submitSolendLend } from './chat/solend-service'
-import { 
-  useChatState, 
-  useWalletState, 
-  useOnrampState, 
-  useJupiterState, 
-  useLendingState, 
+import {
+  useChatState,
+  useWalletState,
+  useOnrampState,
+  useJupiterState,
+  useRaydiumState,
+  useLendingState,
   usePassiveIncomeState,
   useLendingOptions
 } from './chat/hooks'
@@ -34,6 +35,9 @@ export function ChatInterface() {
     setIsTyping
   } = useChatState();
 
+  // Reference to track processed transaction signatures to avoid duplicates
+  const processedTransactions = useRef<Set<string>>(new Set());
+
   const {
     connected,
     publicKey,
@@ -47,8 +51,8 @@ export function ChatInterface() {
   } = useWalletState();
 
   const {
-    isProcessing: isProcessingBuy, 
-    currentQuote, 
+    isProcessing: isProcessingBuy,
+    currentQuote,
     error: onrampError,
     getQuote,
     confirmPurchase,
@@ -58,20 +62,21 @@ export function ChatInterface() {
     proceedToCheckout
   } = useOnrampState();
 
+  // Use Raydium for devnet swaps instead of Jupiter
   const {
     isLoading: isLoadingSwap,
-    orderResponse: jupiterOrder,
+    orderResponse: raydiumOrder,
     swapResult,
-    error: jupiterError,
-    getOrder: getJupiterOrder,
+    error: raydiumError,
+    getOrder: getRaydiumOrder,
     executeSwap,
-    clearOrder: clearJupiterOrder,
+    clearOrder: clearRaydiumOrder,
     clearResult: clearSwapResult,
     swapQuoteWidget,
     setSwapQuoteWidget,
     isSwapProcessing,
     setIsSwapProcessing
-  } = useJupiterState();
+  } = useRaydiumState();
 
   const {
     solendPools,
@@ -104,8 +109,8 @@ export function ChatInterface() {
   // Helper function to find token by name or symbol
   const findToken = (tokenName: string) => {
     const normalizedTokenName = tokenName.toLowerCase();
-    return tokenList.find(token => 
-      token.symbol.toLowerCase() === normalizedTokenName || 
+    return tokenList.find(token =>
+      token.symbol.toLowerCase() === normalizedTokenName ||
       token.name.toLowerCase().includes(normalizedTokenName)
     );
   };
@@ -129,86 +134,86 @@ export function ChatInterface() {
       content: `Would you like to earn passive income with your ${token.symbol}? I can show you some safe lending options.`,
       messageId: promptMsgId
     }]);
-    
+
     // Create a promise that resolves when user clicks a button
     return new Promise<boolean>((resolve) => {
       const handleConfirm = () => {
         // First remove the passive income handlers to prevent duplicate triggers
         setPassiveIncomeHandlers(null);
-        
+
         // Also clear the passive income message ID to prevent rendering options
         setPassiveIncomeMessageId(null);
-        
+
         // Remove the option buttons by updating the message
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === promptMsgId 
-            ? { ...msg, options: undefined } 
+        setMessages(prev => prev.map(msg =>
+          msg.messageId === promptMsgId
+            ? { ...msg, options: undefined }
             : msg
         ));
-        
+
         // Then add user message and resolve
         setMessages(prev => [
           ...prev,
-          { 
-            role: "user", 
+          {
+            role: "user",
             content: "Sure, show me lending options",
             messageId: generateMessageId()
           }
         ]);
-        
+
         resolve(true);
-        
+
         // Immediately start looking up options with the correct token address
         console.log('Showing lending options for token:', token.symbol, 'address:', token.address);
         showLendingOptions(token.symbol, token.address);
       };
-      
+
       const handleDecline = () => {
         // First remove the passive income handlers to prevent duplicate triggers
         setPassiveIncomeHandlers(null);
-        
+
         // Also clear the passive income message ID to prevent rendering options
         setPassiveIncomeMessageId(null);
-        
+
         // Remove the option buttons by updating the message
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === promptMsgId 
-            ? { ...msg, options: undefined } 
+        setMessages(prev => prev.map(msg =>
+          msg.messageId === promptMsgId
+            ? { ...msg, options: undefined }
             : msg
         ));
-        
+
         // Then add user message and resolve
         setMessages(prev => [
           ...prev,
-          { 
-            role: "user", 
+          {
+            role: "user",
             content: "I'm okay, thanks",
             messageId: generateMessageId()
           }
         ]);
-        
+
         resolve(false);
-        
+
         setMessages(prev => [...prev, {
           role: "assistant",
           content: "No problem! You can always check lending options later by asking me about yield opportunities.",
           messageId: generateMessageId()
         }]);
       };
-      
+
       setPassiveIncomeHandlers({ onConfirm: handleConfirm, onDecline: handleDecline });
       setPassiveIncomeMessageId(promptMsgId);
-      
+
       // Add options to the prompt message
-      setMessages(prev => prev.map(msg => 
-        msg.messageId === promptMsgId 
+      setMessages(prev => prev.map(msg =>
+        msg.messageId === promptMsgId
           ? {
-              ...msg,
-              options: [
-                { platform: "Sure", type: "lend", apy: 0, riskLevel: "low", description: "Show safe lending options", url: "", tokenSymbol: token.symbol },
-                { platform: "I'm okay, thanks", type: "lend", apy: 0, riskLevel: "low", description: "Decline lending options", url: "", tokenSymbol: token.symbol }
-              ]
-            }
+            ...msg,
+            options: [
+              { platform: "Sure", type: "lend", apy: 0, riskLevel: "low", description: "Show safe lending options", url: "", tokenSymbol: token.symbol },
+              { platform: "I'm okay, thanks", type: "lend", apy: 0, riskLevel: "low", description: "Decline lending options", url: "", tokenSymbol: token.symbol }
+            ]
+          }
           : msg
       ));
     });
@@ -219,7 +224,7 @@ export function ChatInterface() {
     const searchParams = new URLSearchParams(window.location.search);
     const status = searchParams.get('status');
     const sessionId = searchParams.get('session_id');
-    
+
     if (status === 'success' && sessionId) {
       // Show initial message about successful payment
       setMessages(prev => [...prev, {
@@ -227,10 +232,10 @@ export function ChatInterface() {
         content: "Your SOL purchase was successful! Checking transaction status...",
         messageId: generateMessageId()
       }]);
-      
+
       // Clean up the URL
       window.history.replaceState({}, '', '/chat');
-      
+
       // Start checking payment status
       const checkPaymentStatus = async () => {
         try {
@@ -238,38 +243,38 @@ export function ChatInterface() {
           if (!response.ok) {
             throw new Error('Failed to fetch payment status');
           }
-          
+
           const data = await response.json();
           console.log('Payment status data:', data);
-          
+
           // Check if SOL has been transferred
           if (data.status === 'sol_transferred' || data.status === 'refunded') {
             // Show success message with link to explorer
             const successMsgId = generateMessageId();
-            setMessages(prev => [...prev.filter(msg => 
-              msg.content !== "Your SOL purchase was successful! Checking transaction status..."), 
-              {
-                role: "assistant",
-                content: `SOL successfully sent to your wallet! [View the transaction on Solana Explorer](${data.explorerLink})`,
-                messageId: successMsgId
-              }
+            setMessages(prev => [...prev.filter(msg =>
+              msg.content !== "Your SOL purchase was successful! Checking transaction status..."),
+            {
+              role: "assistant",
+              content: `SOL successfully sent to your wallet! [View the transaction on Solana Explorer](${data.explorerLink})`,
+              messageId: successMsgId
+            }
             ]);
-            
+
             // Offer passive income options for SOL after purchase
             setTimeout(() => {
               handlePassiveIncomePrompt("SOL");
             }, 1000);
-            
+
             return; // Stop checking once transfer is complete
           } else if (data.status === 'error') {
             // Show error message
-            setMessages(prev => [...prev.filter(msg => 
-              msg.content !== "Your SOL purchase was successful! Checking transaction status..."), 
-              {
-                role: "assistant",
-                content: `There was an error with your SOL transfer: ${data.error || 'Unknown error'}`,
-                messageId: generateMessageId()
-              }
+            setMessages(prev => [...prev.filter(msg =>
+              msg.content !== "Your SOL purchase was successful! Checking transaction status..."),
+            {
+              role: "assistant",
+              content: `There was an error with your SOL transfer: ${data.error || 'Unknown error'}`,
+              messageId: generateMessageId()
+            }
             ]);
             return; // Stop checking on error
           } else {
@@ -278,20 +283,20 @@ export function ChatInterface() {
           }
         } catch (error) {
           console.error('Error checking payment status:', error);
-          setMessages(prev => [...prev.filter(msg => 
-            msg.content !== "Your SOL purchase was successful! Checking transaction status..."), 
-            {
-              role: "assistant",
-              content: "There was an error checking your transaction status. Your SOL should arrive shortly.",
-              messageId: generateMessageId()
-            }
+          setMessages(prev => [...prev.filter(msg =>
+            msg.content !== "Your SOL purchase was successful! Checking transaction status..."),
+          {
+            role: "assistant",
+            content: "There was an error checking your transaction status. Your SOL should arrive shortly.",
+            messageId: generateMessageId()
+          }
           ]);
         }
       };
-      
+
       // Start the status check process
       checkPaymentStatus();
-      
+
     } else if (status === 'success') {
       // Fallback for success without session ID
       setMessages(prev => [...prev, {
@@ -300,10 +305,10 @@ export function ChatInterface() {
         messageId: generateMessageId()
       }]);
       handleSuccess();
-      
+
       // Clean up the URL
       window.history.replaceState({}, '', '/chat');
-      
+
       // Offer passive income options for SOL after purchase
       setTimeout(() => {
         handlePassiveIncomePrompt("SOL");
@@ -322,24 +327,33 @@ export function ChatInterface() {
 
   // Updated effect to handle swap result with proper passive income flow
   useEffect(() => {
-    if (swapResult) {
+    if (swapResult && swapResult.signature) {
+      // Check if we've already processed this transaction
+      if (processedTransactions.current.has(swapResult.signature)) {
+        console.log("Already processed transaction:", swapResult.signature);
+        return;
+      }
+
       if (swapResult.status === 'Success') {
+        // Add to our processed set to avoid duplicates
+        processedTransactions.current.add(swapResult.signature);
+
         const successMsgId = generateMessageId();
         setMessages(prev => [...prev, {
           role: "assistant",
           content: `Your token swap was successful! Transaction signature: ${swapResult.signature}`,
           messageId: successMsgId
         }]);
-        
+
         // If this was a token purchase, prompt for passive income options after a short delay
         if (swapQuoteWidget) {
           const tokenSymbol = swapQuoteWidget.outputToken;
-          
+
           // Clear swap data but keep token info for passive income
           setIsSwapProcessing(false);
           clearSwapResult();
           setSwapQuoteWidget(null);
-          
+
           // Wait a moment before showing the passive income prompt
           setTimeout(() => {
             handlePassiveIncomePrompt(tokenSymbol);
@@ -395,10 +409,10 @@ export function ChatInterface() {
 
       // Skip quote fetching and directly proceed to checkout
       await proceedToCheckout();
-      
+
       // Update the loading message with success message
-      setMessages(prev => prev.map(msg => 
-        msg.messageId === loadingMsgId 
+      setMessages(prev => prev.map(msg =>
+        msg.messageId === loadingMsgId
           ? { ...msg, content: `Opening Stripe payment page. Please complete your purchase there. You'll receive 0.1 SOL on Solana Devnet after the payment is processed, and your payment will be automatically refunded.` }
           : msg
       ));
@@ -406,7 +420,7 @@ export function ChatInterface() {
       console.error('Error in handleBuySol:', error);
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: error instanceof Error 
+        content: error instanceof Error
           ? `Error: ${error.message}`
           : "There was an error opening the payment page. Please try again.",
         messageId: generateMessageId()
@@ -414,7 +428,7 @@ export function ChatInterface() {
     }
   };
 
-  // Function to handle buying a token with Jupiter
+  // Function to handle buying a token with Raydium
   const handleBuyToken = async (amount: number, tokenName: string) => {
     if (!publicKey && !isAuthenticated) {
       setMessages(prev => [...prev, {
@@ -444,14 +458,14 @@ export function ChatInterface() {
         messageId: loadingMsgId
       }]);
 
-      // Get order directly with transaction included
-      const order = await getJupiterOrder(token.address, amount);
-      
-      if (jupiterError) {
+      // Get order with Raydium SDK
+      const order = await getRaydiumOrder(token.address, amount);
+
+      if (raydiumError) {
         // Replace loading message with error
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === loadingMsgId 
-            ? { ...msg, content: `Error: ${jupiterError}` }
+        setMessages(prev => prev.map(msg =>
+          msg.messageId === loadingMsgId
+            ? { ...msg, content: `Error: ${raydiumError}` }
             : msg
         ));
         return;
@@ -459,65 +473,51 @@ export function ChatInterface() {
 
       if (!order) {
         // Replace loading message with error if missing transaction
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === loadingMsgId 
+        setMessages(prev => prev.map(msg =>
+          msg.messageId === loadingMsgId
             ? { ...msg, content: "Sorry, I couldn't get a valid swap quote. Please try again later." }
             : msg
         ));
         return;
       }
 
-      console.log("Processing order for Jupiter swap:", order);
+      console.log("Processing order for Raydium swap:", order);
 
-      try {
-        // Get input and output amounts from the order
-        const inAmountNumber = parseFloat(order.inAmount) / Math.pow(10, 9); // SOL is always 9 decimals
-        const outAmountNumber = parseFloat(order.outAmount) / Math.pow(10, token.decimals);
-        
-        // Calculate exchange rate
-        const exchangeRate = outAmountNumber / inAmountNumber;
+      // Calculate SOL amount from lamports
+      const solAmount = Number(order.inAmount) / 1e9;
 
-        // Create quote widget data
-        const quoteWidget = {
-          requestId: order.requestId,
-          inputToken: "SOL",
-          inputAmount: inAmountNumber,
-          outputToken: token.symbol,
-          outputAmount: outAmountNumber,
-          priceImpact: order.priceImpactPct,
-          exchangeRate: exchangeRate
-        };
+      // Calculate exchange rate
+      const tokenAmount = Number(order.outAmount) / Math.pow(10, token.decimals);
+      const exchangeRate = tokenAmount / solAmount;
 
-        console.log("Created swap quote widget:", quoteWidget);
-        setSwapQuoteWidget(quoteWidget);
+      // Update the loading message with success and show the quote
+      setMessages(prev => prev.map(msg =>
+        msg.messageId === loadingMsgId
+          ? { ...msg, content: `Found a quote to buy ${amount} ${token.symbol} with SOL!` }
+          : msg
+      ));
 
-        // Replace loading message with quote info
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === loadingMsgId 
-            ? { ...msg, content: `I've found a swap quote to buy ${amount} ${token.symbol}. Would you like to proceed?` }
-            : msg
-        ));
-      } catch (error) {
-        console.error("Error processing order data:", error);
-        setMessages(prev => prev.map(msg => 
-          msg.messageId === loadingMsgId 
-            ? { ...msg, content: "Sorry, there was an error processing the swap quote. Please try again." }
-            : msg
-        ));
-      }
+      // Set the quote widget state
+      setSwapQuoteWidget({
+        requestId: order.requestId,
+        inputToken: "SOL",
+        inputAmount: solAmount,
+        outputToken: token.symbol,
+        outputAmount: amount,
+        priceImpact: order.priceImpactPct.toFixed(2),
+        exchangeRate: exchangeRate
+      });
     } catch (error) {
-      console.error('Error in handleBuyToken:', error);
+      console.error('Error handling buy token:', error);
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: error instanceof Error 
-          ? `Error: ${error.message}`
-          : "I'm having trouble processing your token swap request. Please try again.",
+        content: `Error getting quote: ${error instanceof Error ? error.message : 'Unknown error'}`,
         messageId: generateMessageId()
       }]);
     }
   };
 
-  // Update the handleConfirmSwap function to use the helper
+  // Update the handleConfirmSwap function to use Raydium
   const handleConfirmSwap = async () => {
     if (!swapQuoteWidget) {
       setMessages(prev => [...prev, {
@@ -531,190 +531,92 @@ export function ChatInterface() {
     try {
       setIsSwapProcessing(true);
       const processingMsgId = generateMessageId();
-      
+
       setMessages(prev => [...prev, {
         role: "assistant",
         content: "Please approve the transaction in your wallet...",
         messageId: processingMsgId
       }]);
 
-      if (!jupiterOrder || !jupiterOrder.transaction) {
-        throw new Error("Failed to get transaction details");
+      if (!raydiumOrder) {
+        throw new Error("Failed to get swap details");
       }
-      
-      // Use the helper function to get the connection
-      const connection = getAlchemyConnection();
-      
-      // Deserialize the transaction from Jupiter
-      const transaction = VersionedTransaction.deserialize(
-        Buffer.from(jupiterOrder.transaction, 'base64')
-      );
-      
-      // Sign the transaction and serialize it (each wallet type handles this differently)
-      let signature;
-      let signedTransaction;
-      
-      if (isAuthenticated && walletAddress && privySendTransaction) {
-        console.log("Using Privy wallet for transaction");
-        try {
-          // For Privy wallet, we need to:
-          // 1. Sign and send the transaction
-          // 2. Get the serialized signed transaction
-          
-          // This is a workaround since Privy doesn't expose a way to just sign
-          // We sign and send first to get user approval but use the serialized transaction for Jupiter
-          signature = await privySendTransaction(transaction, connection);
-          
-          // We can't directly get the signed transaction from Privy
-          // For now, update the user that we're preparing the transaction for Jupiter
-          setMessages(prev => prev.map(msg => 
-            msg.messageId === processingMsgId 
-              ? { ...msg, content: `Transaction approved! Preparing for execution...` }
-              : msg
-          ));
-          
-          // We need to retrieve the transaction to get the serialized version
-          // Use the Alchemy connection here too to avoid 403 errors
-          const confirmedTx = await getAlchemyConnection().getTransaction(signature, {
-            commitment: 'confirmed',
-            maxSupportedTransactionVersion: 0
-          });
-          
-          if (!confirmedTx || !confirmedTx.transaction) {
-            throw new Error("Failed to retrieve the signed transaction");
-          }
-          
-          // Use any type to bypass type checking errors with serialize method
-          signedTransaction = Buffer.from((confirmedTx.transaction as any).serialize()).toString('base64');
-        } catch (err) {
-          console.error("Privy sendTransaction error:", err);
-          throw new Error(`Privy wallet error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        }
-      } else if (connected && publicKey && signTransaction) {
-        // If signTransaction is available, use it directly for better UX
-        console.log("Using Solana wallet adapter's signTransaction method");
-        try {
-          // Cast to any to bypass the type checking errors
-          const signedTx = await signTransaction(transaction);
-          
-          // Use a more generic approach to serialize
-          signedTransaction = Buffer.from((signedTx as any).serialize()).toString('base64');
-          
-          // Update the message that transaction was signed
-          setMessages(prev => prev.map(msg => 
-            msg.messageId === processingMsgId 
-              ? { ...msg, content: `Transaction signed! Preparing for execution...` }
-              : msg
-          ));
-        } catch (err) {
-          console.error("Solana wallet signTransaction error:", err);
-          throw new Error(`Wallet error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        }
-      } else if (connected && publicKey && sendTransaction) {
-        console.log("Using Solana wallet adapter's sendTransaction method");
-        try {
-          // When using Solana wallet adapter, we can:
-          // 1. Sign the transaction (if the adapter supports it)
-          // 2. Serialize it and send to Jupiter
-          
-          // First sign and get signature
-          signature = await sendTransaction(transaction, connection);
-          
-          // Update the message that we got signature
-          setMessages(prev => prev.map(msg => 
-            msg.messageId === processingMsgId 
-              ? { ...msg, content: `Transaction approved! Preparing for execution...` }
-              : msg
-          ));
-          
-          // We need to retrieve the transaction to get the serialized version
-          // Use the Alchemy connection here too to avoid 403 errors
-          const confirmedTx = await getAlchemyConnection().getTransaction(signature, {
-            commitment: 'confirmed',
-            maxSupportedTransactionVersion: 0
-          });
-          
-          if (!confirmedTx || !confirmedTx.transaction) {
-            throw new Error("Failed to retrieve the signed transaction");
-          }
-          
-          // Use any type to bypass type checking errors with serialize method
-          signedTransaction = Buffer.from((confirmedTx.transaction as any).serialize()).toString('base64');
-        } catch (err) {
-          console.error("Solana wallet adapter error:", err);
-          throw new Error(`Wallet error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        }
-      } else {
-        throw new Error("No wallet is available to sign the transaction");
+
+      // Make sure we have a wallet connection
+      if (!isAuthenticated && !publicKey) {
+        throw new Error("Please connect your wallet to continue");
       }
-      
-      if (!signedTransaction) {
-        throw new Error("Failed to get signed transaction");
-      }
-      
+
+      // Execute the swap directly with Raydium using executeSwap
       // Update processing message
-      setMessages(prev => prev.map(msg => 
-        msg.messageId === processingMsgId 
-          ? { ...msg, content: `Transaction signed! Executing swap with Jupiter...` }
+      setMessages(prev => prev.map(msg =>
+        msg.messageId === processingMsgId
+          ? { ...msg, content: `Executing swap with Raydium...` }
           : msg
       ));
-      
-      // Execute the order with the signed transaction
-      const result = await executeSwap(signedTransaction);
-      
+
+      // Execute the swap with the stored order data
+      const result = await executeSwap();
+
       if (result) {
-        if (result.status === 'Success') {
-          // Update with success message using the signature from the result
-          const txSignature = result.signature || signature;
-          setMessages(prev => prev.map(msg => 
-            msg.messageId === processingMsgId 
-                ? { ...msg, content: `Swap successful! [View transaction](https://explorer.solana.com/tx/${txSignature}?cluster=devnet)` }
+        if (result.status === 'Success' && result.signature) {
+          // Add to our processed set to avoid duplicates
+          processedTransactions.current.add(result.signature);
+
+          // Update processing message with transaction link
+          const txSignature = result.signature;
+          setMessages(prev => prev.map(msg =>
+            msg.messageId === processingMsgId
+              // ? { ...msg, content: `Swap successful! [View transaction](https://explorer.solana.com/tx/${txSignature}?cluster=devnet)` }
+              ? { ...msg, content: `Swap successful! [View transaction](https://solscan.io/tx/${txSignature}?cluster=devnet)` }
               : msg
           ));
-          
+
           // Store output token before clearing swap info
           const outputToken = swapQuoteWidget.outputToken;
-          
-          // Clear the swap info
+
+          // Clear the swap info immediately to prevent duplicate processing
           setIsSwapProcessing(false);
           setSwapQuoteWidget(null);
-          clearJupiterOrder();
-          
-          // Prompt for passive income directly after clearing swap info
-          // with a slight delay for better UX
+          clearRaydiumOrder();
+          clearSwapResult();
+
+          // Show passive income prompt with a delay
           setTimeout(() => {
             handlePassiveIncomePrompt(outputToken);
           }, 1500);
         } else {
           // Handle error case
-          setMessages(prev => prev.map(msg => 
-            msg.messageId === processingMsgId 
+          setMessages(prev => prev.map(msg =>
+            msg.messageId === processingMsgId
               ? { ...msg, content: `Swap failed: ${result.error || 'Unknown error'}` }
               : msg
           ));
           setIsSwapProcessing(false);
           setSwapQuoteWidget(null);
-          clearJupiterOrder();
+          clearRaydiumOrder();
+          clearSwapResult();
         }
       }
     } catch (error) {
       console.error('Error confirming swap:', error);
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: error instanceof Error 
+        content: error instanceof Error
           ? `Error with swap: ${error.message}`
           : "There was an error executing your swap. Please try again.",
         messageId: generateMessageId()
       }]);
       setIsSwapProcessing(false);
       setSwapQuoteWidget(null);
-      clearJupiterOrder();
+      clearRaydiumOrder();
+      clearSwapResult();
     }
   };
 
-  // Function to handle Jupiter swap cancellation
+  // Function to handle Raydium swap cancellation
   const handleCancelSwap = () => {
-    clearJupiterOrder();
+    clearRaydiumOrder();
     setSwapQuoteWidget(null);
     setMessages(prev => [...prev, {
       role: "assistant",
@@ -759,7 +661,7 @@ export function ChatInterface() {
     // Hide lending options UI immediately when the user clicks "Lend Now"
     setShowLendingConfirm(false);
     setSolendPools(null); // Hide the pools UI immediately
-    
+
     // Add debugging to see what values we have
     console.log('handleLendNow called with these values:');
     console.log('lendingAmount:', lendingAmount);
@@ -768,37 +670,37 @@ export function ChatInterface() {
     console.log('publicKey:', publicKey?.toString());
     console.log('isAuthenticated:', isAuthenticated);
     console.log('walletAddress:', walletAddress);
-    
+
     setMessages(prev => [...prev, {
       role: "assistant",
       content: `Lending ${lendingAmount} ${lendingToken?.symbol} at ${selectedPool?.apy}% APY... Please approve the transaction in your wallet.`,
       messageId: generateMessageId()
     }]);
-    
+
     try {
       // Check each value individually for better error reporting
       if (!selectedPool) {
         console.error('Missing selectedPool');
         throw new Error('Missing selectedPool - Please select a lending pool');
       }
-      
+
       if (!publicKey && !walletAddress) {
         console.error('Missing publicKey/walletAddress');
         throw new Error('Missing wallet address - Please connect your wallet');
       }
-      
+
       if (!lendingAmount || lendingAmount <= 0) {
         console.error('Invalid lendingAmount:', lendingAmount);
         throw new Error('Please enter a valid amount to lend');
       }
-      
+
       // Use either Privy wallet address or Solana wallet public key
       const userPublicKey = walletAddress || publicKey?.toString();
-      
+
       // Create a callback for sending the transaction based on available wallet
       const sendTx = async (transaction: VersionedTransaction): Promise<string> => {
         const connection = getAlchemyConnection();
-        
+
         if (isAuthenticated && privySendTransaction) {
           return await privySendTransaction(transaction, connection);
         } else if (connected && publicKey && sendTransaction) {
@@ -807,7 +709,7 @@ export function ChatInterface() {
           throw new Error("No wallet available to send transaction");
         }
       };
-      
+
       // Use the extracted service function to handle the lending logic
       const signature = await submitSolendLend(
         selectedPool.pool,
@@ -848,8 +750,8 @@ export function ChatInterface() {
 
     const userMessage = input;
     setInput("");
-    setMessages(prev => [...prev, { 
-      role: "user", 
+    setMessages(prev => [...prev, {
+      role: "user",
       content: userMessage,
       messageId: generateMessageId()
     }]);
@@ -857,7 +759,7 @@ export function ChatInterface() {
 
     try {
       const llmResponse = await processLLMResponse(userMessage);
-      
+
       // Handle different intents
       switch (llmResponse.intent) {
         case "buy_sol":
@@ -890,31 +792,31 @@ export function ChatInterface() {
           if (!tokenSymbol) {
             tokenSymbol = extractTokenSymbolFromYieldQuery(userMessage) || undefined;
           }
-          
+
           if (tokenSymbol) {
             // Find token mint from tokenList
             const token = tokenList.find(t => t.symbol.toUpperCase() === tokenSymbol.toUpperCase());
             if (token) {
               const loadingMsgId = generateMessageId();
-              setMessages(prev => [...prev, { 
-                role: "assistant", 
+              setMessages(prev => [...prev, {
+                role: "assistant",
                 content: `Looking up yield options for ${token.symbol}...`,
                 messageId: loadingMsgId
               }]);
-              
+
               // Use the showLendingOptions function
               showLendingOptions(token.symbol, token.address);
             } else {
-              setMessages(prev => [...prev, { 
-                role: "assistant", 
+              setMessages(prev => [...prev, {
+                role: "assistant",
                 content: `Token ${tokenSymbol} not found in supported list.`,
                 messageId: generateMessageId()
               }]);
             }
           } else {
             // If no specific token is mentioned, show a list of supported tokens
-            setMessages(prev => [...prev, { 
-              role: "assistant", 
+            setMessages(prev => [...prev, {
+              role: "assistant",
               content: "Which token would you like to explore lending options for? Here are the supported tokens:",
               messageId: generateMessageId(),
               options: tokenList.map(token => ({
@@ -983,7 +885,7 @@ export function ChatInterface() {
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-36">
         <div className="w-full">
           {messages.map((message, index) => (
-            <ChatMessage 
+            <ChatMessage
               key={message.messageId || index}
               message={message}
               passiveIncomeMessageId={passiveIncomeMessageId}
@@ -991,7 +893,7 @@ export function ChatInterface() {
               onExploreYield={handleExploreYield}
             />
           ))}
-          
+
           {currentQuote && (
             <div className="flex justify-start">
               <div className="w-full max-w-[700px]">
@@ -1003,7 +905,7 @@ export function ChatInterface() {
               </div>
             </div>
           )}
-          
+
           {swapQuoteWidget && (
             <div className="flex justify-start">
               <div className="w-full max-w-[700px]">
@@ -1016,7 +918,7 @@ export function ChatInterface() {
               </div>
             </div>
           )}
-          
+
           {solendPools && !showLendingConfirm && (
             <div className="flex justify-start w-full">
               <SolendPoolsWidget
@@ -1030,7 +932,7 @@ export function ChatInterface() {
               />
             </div>
           )}
-          
+
           {showLendingConfirm && selectedPool && (
             <LendingConfirmWidget
               tokenSymbol={lendingToken?.symbol || ''}
@@ -1041,7 +943,7 @@ export function ChatInterface() {
               onCancel={() => setShowLendingConfirm(false)}
             />
           )}
-          
+
           {isTyping && (
             <div className="flex justify-start">
               <div className="bg-[#252C3B] rounded-lg p-3">
@@ -1053,7 +955,7 @@ export function ChatInterface() {
               </div>
             </div>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
       </div>

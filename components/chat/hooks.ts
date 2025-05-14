@@ -3,6 +3,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { usePrivyAuth } from "@/components/privy/privy-auth-provider";
 import { useOnramp } from '@/hooks/useOnramp';
 import { useJupiter } from '@/hooks/useJupiter';
+import { useRaydium } from '@/hooks/useRaydium';
 import { Message, SolendPool, SwapQuoteWidget } from './types';
 import { generateMessageId } from './utils';
 import { fetchSolendPoolsByMint } from './solend-service';
@@ -82,6 +83,20 @@ export function useJupiterState() {
   
   return {
     ...jupiter,
+    swapQuoteWidget,
+    setSwapQuoteWidget,
+    isSwapProcessing,
+    setIsSwapProcessing
+  };
+}
+
+export function useRaydiumState() {
+  const raydium = useRaydium();
+  const [swapQuoteWidget, setSwapQuoteWidget] = useState<SwapQuoteWidget | null>(null);
+  const [isSwapProcessing, setIsSwapProcessing] = useState(false);
+  
+  return {
+    ...raydium,
     swapQuoteWidget,
     setSwapQuoteWidget,
     isSwapProcessing,

@@ -1,5 +1,5 @@
 import jupiterService from './JupiterService';
-// import raydiumService from './RaydiumService';
+
 
 class AgentService {
   constructor() {
@@ -7,7 +7,7 @@ class AgentService {
     this.apiUrl = 'https://api.together.xyz/v1/chat/completions';
     this.conversationContext = new Map();
     this.pendingTransaction = new Map();
-    
+
     // Predefined list of common tokens with their correct addresses
     this.commonTokens = {
       'SOL': {
@@ -37,9 +37,22 @@ class AgentService {
       'TRUMP': {
         address: '6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN',
         decimals: 6,
-        symbol: 'TRUMP',    
+        symbol: 'TRUMP',
         name: 'Trump'
+      },
+      'WALLET': {
+        address: 'bVfhihtqyopGwZTMYZRm14NW9ZveFQkxWBeoEFPLv9h',
+        decimals: 9,
+        symbol: 'WALLET',
+        name: 'Wallet'
+      },
+      'FAME': {
+        address: '4pqFVT2emoqUPH76Nf9TSRxRce7EZCMaMzt4RX3Y3Hz5',
+        decimals: 9,
+        symbol: 'FAME',
+        name: 'Fame'
       }
+
     };
   }
 
@@ -47,35 +60,41 @@ class AgentService {
     try {
       // Normalize input to uppercase for comparison
       const normalizedInput = userInput.toUpperCase();
-      
+
       // Direct mapping for known tokens to avoid API calls
       const directMappings = {
         // SOL and variations
         'SOL': 'SOL',
         'SOLANA': 'SOL',
-        
+
         // USDC and variations
         'USDC': 'USDC',
         'USD COIN': 'USDC',
         'USD': 'USDC',
         'DOLLAR': 'USDC',
-        
+
         // USDT and variations
         'USDT': 'USDT',
         'TETHER': 'USDT',
-        
+
         // BONK and variations
         'BONK': 'BONK',
-        
+
         // TRUMP and variations
-        'TRUMP': 'TRUMP'
+        'TRUMP': 'TRUMP',
+
+        // WALLET and variations
+        'WALLET': 'WALLET',
+
+        // FAME and variations
+        'FAME': 'FAME'
       };
-      
+
       // Check if we have a direct mapping
       if (directMappings[normalizedInput]) {
         return directMappings[normalizedInput];
       }
-      
+
       // Check if the input exactly matches a key in commonTokens
       if (this.commonTokens[normalizedInput]) {
         return normalizedInput;
@@ -128,11 +147,11 @@ class AgentService {
 
       const data = await response.json();
       const tokenInfo = JSON.parse(data.choices[0].message.content);
-      
+
       if (!tokenInfo.symbol) {
         throw new Error(`Token "${userInput}" not found in supported list`);
       }
-      
+
       return tokenInfo.symbol;
     } catch (error) {
       console.error('Error in getTokenSymbol:', error);
@@ -205,13 +224,13 @@ class AgentService {
         try {
           // Default to SOL if fromToken is not specified
           const fromToken = intentData.fromToken || 'SOL';
-          
+
           // Get standardized token symbols from LLM
           const fromTokenSymbol = await this.getTokenSymbol(fromToken);
           const toTokenSymbol = await this.getTokenSymbol(intentData.toToken);
 
           console.log('Token symbols extracted:', { fromTokenSymbol, toTokenSymbol });
-          
+
           // Check if tokens are in our supported list
           if (!this.commonTokens[fromTokenSymbol]) {
             return {
@@ -226,7 +245,7 @@ class AgentService {
               message: `Sorry, the token '${toTokenSymbol}' is not supported for trading at this time.`
             };
           }
-          
+
           // Check if we're trying to swap the same token
           if (fromTokenSymbol === toTokenSymbol) {
             return {
@@ -242,14 +261,14 @@ class AgentService {
               message: 'Please specify a valid positive amount to swap.'
             };
           }
-          
-          console.log('Initiating swap with tokens:', { 
+
+          console.log('Initiating swap with tokens:', {
             from: {
               symbol: fromTokenSymbol,
               address: this.commonTokens[fromTokenSymbol].address
             },
             to: {
-              symbol: toTokenSymbol, 
+              symbol: toTokenSymbol,
               address: this.commonTokens[toTokenSymbol].address
             },
             amount: intentData.amount
@@ -279,13 +298,13 @@ class AgentService {
           };
         } catch (error) {
           console.error('Error processing swap:', error);
-          
+
           // Provide a more user-friendly error message based on the error
           let errorMessage = `Failed to execute swap: ${error.message}`;
-          
+
           // Reset the conversation context on error so user can try again
           this.conversationContext.delete(walletAddress);
-          
+
           return {
             type: 'error',
             message: errorMessage

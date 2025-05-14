@@ -130,7 +130,7 @@ export async function processLLMResponse(userMessage: string): Promise<LLMRespon
       }
 
       // Check if the response contains a buy token request
-      const tokenMatch = content.match(/buy\s+(\d+(?:\.\d+)?)\s*(USDC|TRUMP|BONK|PEPE|DOGE|BTC)/i);
+      const tokenMatch = content.match(/buy\s+(\d+(?:\.\d+)?)\s*(USDC|TRUMP|BONK|PEPE|DOGE|BTC|WALLET|FAME)/i);
       if (tokenMatch) {
         const amount = parseFloat(tokenMatch[1]);
         const token = tokenMatch[2].toUpperCase();
