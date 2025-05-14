@@ -2,7 +2,6 @@
 export * from './app-sidebar';
 export * from './auth-status';
 export * from './chat-interface';
-export { ChatInterface as ChatInterfaceRefactored } from './chat-interface-refactored';
 export * from './dashboard';
 export * from './header';
 export * from './performance-chart';
