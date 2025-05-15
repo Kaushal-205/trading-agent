@@ -2,8 +2,11 @@ services:
   - type: web
     name: solend-backend
     env: node
-    buildCommand: npm install
+    buildCommand: |
+      npm install
+      npm install rpc-websockets@7.5.1
     startCommand: npm start
     envVars:
       - key: PORT
-        value: 4000 
+        value: 4000
+    nodeVersion: 18.17.0 
