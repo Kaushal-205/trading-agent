@@ -44,7 +44,7 @@ export function PortfolioMetrics() {
             connection = new Connection(endpoint, 'confirmed');
             balance = await connection.getBalance(new PublicKey(walletAddress));
             success = true;
-            console.log("Connected successfully using:", endpoint);
+            // console.log("Connected successfully using:", endpoint);
             break;
           } catch (err) {
             console.warn(`Failed to connect to ${endpoint}:`, err);

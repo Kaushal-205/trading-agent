@@ -29,7 +29,7 @@ export function ChatInputArea({
         <Button
           variant="outline"
           className="bg-white text-black hover:bg-gray-100 border-input"
-          onClick={() => onQuickAction("Buy 0.1 SOL")}
+          onClick={() => onQuickAction("Buy 0.005 SOL")}
         >
           Buy SOL
         </Button>
@@ -59,7 +59,7 @@ export function ChatInputArea({
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="I want to buy 0.1 Sol"
+            placeholder="I want to buy 0.005 SOL"
             className="w-full border border-input rounded-lg bg-white px-12 py-2 text-md shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-white text-black"
           />
         </div>

@@ -90,19 +90,19 @@ export function useJupiterState() {
   };
 }
 
-export function useRaydiumState() {
-  const raydium = useRaydium();
-  const [swapQuoteWidget, setSwapQuoteWidget] = useState<SwapQuoteWidget | null>(null);
-  const [isSwapProcessing, setIsSwapProcessing] = useState(false);
+// export function useRaydiumState() {
+//   const raydium = useRaydium();
+//   const [swapQuoteWidget, setSwapQuoteWidget] = useState<SwapQuoteWidget | null>(null);
+//   const [isSwapProcessing, setIsSwapProcessing] = useState(false);
   
-  return {
-    ...raydium,
-    swapQuoteWidget,
-    setSwapQuoteWidget,
-    isSwapProcessing,
-    setIsSwapProcessing
-  };
-}
+//   return {
+//     ...raydium,
+//     swapQuoteWidget,
+//     setSwapQuoteWidget,
+//     isSwapProcessing,
+//     setIsSwapProcessing
+//   };
+// }
 
 export function useLendingState() {
   const [solendPools, setSolendPools] = useState<SolendPool[] | null>(null);

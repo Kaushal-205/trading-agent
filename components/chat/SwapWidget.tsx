@@ -13,7 +13,7 @@ export function SwapWidget({ quote, onConfirm, onCancel, isProcessing = false }:
   return (
     <div className="widget bg-white rounded-lg p-4 border border-brand-purple/30 mt-4">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-black">Raydium Swap</h3>
+        <h3 className="text-lg font-semibold text-black">Jupiter Swap</h3>
         <span className="text-brand-purple text-lg font-bold">
           {quote.outputAmount} {quote.outputToken}
         </span>

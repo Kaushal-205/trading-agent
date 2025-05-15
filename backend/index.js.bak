@@ -1,0 +1,413 @@
+const express = require('express');
+const cors = require('cors');
+const { SolendActionCore } = require('@solendprotocol/solend-sdk');
+const { Connection, clusterApiUrl, PublicKey, Keypair, SystemProgram, sendAndConfirmTransaction, Transaction } = require('@solana/web3.js');
+const BN = require('bn.js');
+const { Buffer } = require('buffer');
+const Stripe = require('stripe');
+const crypto = require('crypto');
+const bs58 = require('bs58');
+
+
+require('dotenv').config();
+
+const app = express();
+app.use(cors());
+
+// Global JSON parser – stores raw body for Stripe webhook verification
+app.use(express.json());
+
+// New dependencies for Stripe and Solana funding
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY_LIVE);
+
+// Load the funding wallet (mainnet) from env.
+const FUNDING_SECRET = process.env.FUNDING_WALLET_SECRET;
+console.log("FUNDING_SECRET", FUNDING_SECRET);
+let fundingKeypair = null;
+
+try {
+  if (FUNDING_SECRET) {
+    const secretKey = bs58.default.decode(FUNDING_SECRET);
+    fundingKeypair = Keypair.fromSecretKey(secretKey);
+    console.log("Funding wallet address:", fundingKeypair.publicKey.toString());
+  } else {
+    console.warn("Warning: FUNDING_WALLET_SECRET not set. SOL transfers will fail.");
+  }
+} catch (error) {
+  console.error("Error initializing funding wallet:", error);
+}
+
+// Function to get current SOL price
+async function getCurrentSolPrice() {
+  try {
+    const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd,inr');
+    const data = await response.json();
+    return {
+      usd: data.solana.usd,
+      inr: data.solana.inr
+    };
+  } catch (error) {
+    console.error('Error fetching SOL price:', error);
+    return null;
+  }
+}
+
+// Default prices (if not defined in .env)
+const PRICE_USD = process.env.PRICE_USD || 100; // $1.00 in cents
+const PRICE_INR = process.env.PRICE_INR || 100; // ₹1.00 in paisa
+const SOL_AMOUNT = 0.1; // Amount of SOL to transfer (fixed at 0.1 SOL)
+
+
+// Store payment sessions for refund processing
+const paymentSessions = new Map();
+
+app.post('/api/solend-lend', async (req, res) => {
+  try {
+    // console.log('req.body', req.body);
+    const { pool, amount, userPublicKey } = req.body;
+    if (!pool || typeof pool !== 'object') return res.status(400).json({ error: 'Missing or invalid pool' });
+    // if (!reserve || typeof reserve !== 'object') return res.status(400).json({ error: 'Missing or invalid reserve' });
+    if (typeof amount !== 'number' || isNaN(amount) || amount <= 0) return res.status(400).json({ error: 'Missing or invalid amount' });
+    if (!userPublicKey || typeof userPublicKey !== 'string') return res.status(400).json({ error: 'Missing or invalid userPublicKey' });
+    // if (!reserve.liquidity || typeof reserve.liquidity.mintDecimals !== 'number') return res.status(400).json({ error: 'Missing reserve.liquidity.mintDecimals' });
+
+    const connection = new Connection(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://api.mainnet-beta.solana.com');
+    const decimals = new BN(pool.reserve.liquidity.mintDecimals);
+    const amountBN = new BN(amount).mul(new BN(10).pow(decimals));
+    const wallet = { publicKey: new PublicKey(userPublicKey) };
+
+    // Construct reserve object with string values as per SDK types
+    // console.log('pool.reserve', pool.reserve);
+    const reserve = {
+      address: pool.reserve.address,
+      liquidityAddress: pool.reserve.liquidity.supplyPubkey,
+      cTokenMint: pool.reserve.collateral.mintPubkey,
+      cTokenLiquidityAddress: pool.reserve.collateral.supplyPubkey,
+      pythOracle: pool.reserve.liquidity.pythOracle,
+      switchboardOracle: pool.reserve.liquidity.switchboardOracle,
+      mintAddress: pool.reserve.liquidity.mintPubkey,
+      liquidityFeeReceiverAddress: pool.reserve.config.feeReceiver
+    }
+
+    const pool_reserve = {
+      address: pool.reserve.address,
+      pythOracle: pool.reserve.liquidity.pythOracle,
+      switchboardOracle: pool.reserve.liquidity.switchboardOracle,
+      mintAddress: pool.reserve.liquidity.mintPubkey,
+      liquidityFeeReceiverAddress: pool.reserve.config.feeReceiver,
+      extraOracle: pool.reserve.config.extraOracle
+    }
+
+    const pool_derived = {
+      address: pool.reserve.lendingMarket,
+      owner: pool.reserve.lendingMarket,
+      name: null,
+      authorityAddress: pool.reserve.lendingMarket,
+      reserves: [pool_reserve],
+    }
+
+    const solendAction = await SolendActionCore.buildDepositTxns(
+      pool_derived,
+      reserve,
+      connection,
+      amountBN.toString(),
+      wallet,
+      { environment: 'production' }
+    );
+    console.log("after building txns")
+    console.log('solendAction', solendAction);
+    const versionedTxn = await solendAction.getVersionedTransaction();
+    const serialized = Buffer.from(versionedTxn.serialize()).toString('base64');
+    res.json({ transaction: serialized });
+  } catch (e) {
+    console.error('Solend lend API error:', e);
+    let errorMsg = 'Unknown error';
+    if (e instanceof Error) errorMsg = e.message;
+    else if (typeof e === 'object') errorMsg = JSON.stringify(e);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Backend is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// === 1. Create Stripe Checkout Session with country-specific pricing ===
+app.post('/api/create-checkout-session', async (req, res) => {
+  try {
+    const { walletAddress, email, country, dollarAmount, solAmount, tokenSymbol, tokenAddress, tokenAmount } = req.body;
+    
+    // Validate required fields
+    if (!walletAddress || typeof walletAddress !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid walletAddress' });
+    }
+
+    // Validate email format if provided
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    // Validate country code
+    if (country && typeof country !== 'string' || (country && country.length !== 2)) {
+      return res.status(400).json({ error: 'Invalid country code' });
+    }
+
+    // Get current SOL price
+    const solPrice = await getCurrentSolPrice();
+    if (!solPrice) {
+      return res.status(500).json({ error: 'Unable to fetch current SOL price' });
+    }
+
+    // Determine currency and price based on country (default to USD)
+    let currency = 'usd';
+    let amount = PRICE_USD; // Default $1 USD (in cents)
+
+    // If country is India, use INR
+    if (country === 'IN') {
+      currency = 'inr';
+      amount = PRICE_INR; // ₹100 INR (in paisa)
+    }
+
+    // Handle custom amount cases
+    let finalSolAmount;
+    
+    // Case 1: If solAmount is specified, we calculate the fiat amount needed
+    if (solAmount && typeof solAmount === 'number' && solAmount > 0) {
+      finalSolAmount = solAmount;
+      // Convert SOL amount to fiat (in smallest currency unit - cents or paisa)
+      amount = Math.round(solAmount * (currency === 'usd' ? solPrice.usd : solPrice.inr) * 100);
+    } 
+    // Case 2: If dollarAmount is specified, calculate SOL equivalent
+    else if (dollarAmount && typeof dollarAmount === 'number' && dollarAmount > 0) {
+      // Convert dollarAmount to cents for Stripe
+      amount = Math.round(dollarAmount * 100);
+      // Calculate SOL amount from the dollar amount
+      const paymentAmount = amount / 100; // Convert cents/paisa to dollars/rupees
+      finalSolAmount = currency === 'usd' 
+        ? paymentAmount / solPrice.usd
+        : paymentAmount / solPrice.inr;
+    } 
+    // Case 3: Use default values if neither is specified
+    else {
+      // Calculate SOL amount based on default payment amount
+      const paymentAmount = amount / 100; // Convert cents/paisa to dollars/rupees
+      finalSolAmount = currency === 'usd' 
+        ? paymentAmount / solPrice.usd
+        : paymentAmount / solPrice.inr;
+    }
+    
+    // Validate amount is a positive number
+    if (typeof amount !== 'number' || amount <= 0) {
+      return res.status(500).json({ error: 'Invalid price configuration' });
+    }
+
+    // Validate and get URLs
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:4000';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+    if (!backendUrl || !frontendUrl) {
+      return res.status(500).json({ error: 'Missing required URL configuration' });
+    }
+
+    // Round the finalSolAmount to 8 decimal places for precision
+    finalSolAmount = parseFloat(finalSolAmount.toFixed(8));
+
+    // Format sol amount for display with 4 decimal places
+    const displaySolAmount = finalSolAmount.toFixed(4);
+
+    // Create a unique session ID
+    const uniqueSessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    
+    // Determine if this is a direct SOL purchase or a token swap
+    const isTokenSwap = tokenSymbol && tokenAddress && tokenAmount;
+    
+    // Prepare product name and description based on purchase type
+    let productName, productDescription;
+    
+    if (isTokenSwap) {
+      productName = `${tokenSymbol} Token Purchase (via SOL)`;
+      productDescription = `Buy ${tokenAmount} ${tokenSymbol} tokens using SOL on Solana Mainnet`;
+    } else {
+      productName = `Solana Mainnet Top-up (${displaySolAmount} SOL)`;
+      productDescription = `Adds ${displaySolAmount} SOL to your Solana wallet on Mainnet`;
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      line_items: [
+        {
+          price_data: {
+            currency: currency,
+            product_data: {
+              name: productName,
+              description: productDescription
+            },
+            unit_amount: amount,
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        walletAddress,
+        solAmount: finalSolAmount.toString(),
+        fiatAmount: (amount / 100).toString(),
+        fiatCurrency: currency,
+        sessionId: uniqueSessionId,
+        isTokenSwap: isTokenSwap ? 'true' : 'false',
+        tokenSymbol: tokenSymbol || '',
+        tokenAddress: tokenAddress || '',
+        tokenAmount: tokenAmount ? tokenAmount.toString() : '',
+      },
+      success_url: `${backendUrl}/payment-success?amount=${finalSolAmount}&wallet=${walletAddress}&success=true&session_id=${uniqueSessionId}${isTokenSwap ? '&token_swap=true' : ''}`,
+      cancel_url: `${frontendUrl}?canceled=true`,
+      customer_email: email || undefined,
+    });
+
+    // Store session for later reference
+    paymentSessions.set(uniqueSessionId, {
+      id: uniqueSessionId,
+      stripeSessionId: session.id,
+      walletAddress,
+      amount: session.amount_total,
+      currency: session.currency,
+      status: 'created',
+      timestamp: new Date().toISOString(),
+      solAmount: finalSolAmount,
+      isTokenSwap: isTokenSwap,
+      tokenSymbol: tokenSymbol || null,
+      tokenAddress: tokenAddress || null,
+      tokenAmount: tokenAmount || null
+    });
+
+    res.json({ 
+      url: session.url, 
+      solAmount: finalSolAmount,
+      fiatAmount: amount / 100,
+      fiatCurrency: currency,
+      sessionId: uniqueSessionId,
+      isTokenSwap: isTokenSwap,
+      tokenSymbol: tokenSymbol || null,
+      tokenAmount: tokenAmount || null
+    });
+  } catch (e) {
+    console.error('Stripe session error:', e);
+    // Don't expose internal error details to client
+    res.status(500).json({ error: 'Could not create checkout session' });
+  }
+});
+
+// === New endpoint to handle payment success and trigger SOL transfer ===
+app.get('/payment-success', async (req, res) => {
+  const { session_id, wallet, amount } = req.query;
+  
+  console.log(`Payment success for session: ${session_id}, wallet: ${wallet}, amount: ${amount}`);
+  
+  // Create minimal session data
+  const sessionData = { 
+    walletAddress: wallet || 'unknown',
+    status: 'payment_completed',
+    amount: amount || 0.1,
+    sessionId: session_id || ''
+  };
+  
+  // Get session data if available for additional info
+  if (session_id && paymentSessions.has(session_id)) {
+    const storedSession = paymentSessions.get(session_id);
+    sessionData.status = 'payment_completed';
+    sessionData.solAmount = storedSession.solAmount;
+  }
+  
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  
+  // Send HTML that immediately notifies parent window and closes itself
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Payment Processing</title>
+      <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        .success { color: #4CAF50; }
+      </style>
+      <script>
+        // Execute immediately when page loads
+        function notifyParentAndClose() {
+          console.log('Attempting to close payment window...');
+          try {
+            if (window.opener && !window.opener.closed) {
+              window.opener.postMessage({
+                type: 'PAYMENT_COMPLETE',
+                sessionId: '${session_id || ''}',
+                walletAddress: '${wallet || ''}',
+                amount: ${amount || 0.1},
+                status: 'payment_completed'
+              }, '*');
+              console.log('Sent payment complete message to parent');
+              
+              // Close this tab immediately
+              window.close();
+              
+              // Fallback redirect after 500ms if window.close() doesn't work
+              setTimeout(function() {
+                window.location.href = "${frontendUrl}";
+              }, 500);
+            } else {
+              // If opener is not available, just redirect
+              window.location.href = "${frontendUrl}";
+            }
+          } catch (err) {
+            console.error('Error:', err);
+            // Redirect on error
+            window.location.href = "${frontendUrl}";
+          }
+        }
+        
+        // Call immediately without waiting for DOMContentLoaded
+        notifyParentAndClose();
+      </script>
+    </head>
+    <body>
+      <h1 class="success">Payment Successful!</h1>
+      <p>Redirecting to the app...</p>
+    </body>
+    </html>
+  `);
+});
+
+// === 3. Check payment and SOL transfer status ===
+app.get('/api/payment-status/:sessionId', async (req, res) => {
+  const { sessionId } = req.params;
+  
+  console.log(`Checking payment status for session: ${sessionId}`);
+  
+  try {
+    // First check our local cache
+    if (paymentSessions.has(sessionId)) {
+      const sessionData = paymentSessions.get(sessionId);
+      console.log(`Found session ${sessionId} in cache:`, sessionData);
+      
+      // Format response with explorer link if available
+      const response = {
+        ...sessionData,
+        explorerLink: sessionData.explorerLink || null,
+        message: getStatusMessage(sessionData)
+      };
+      
+      return res.json(response);
+    }
+    
+    // If not in cache, try to fetch from Stripe
+    console.log(`Session ${sessionId} not found in cache, checking Stripe...`);
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (!session) {
+      console.log(`Session ${sessionId} not found in Stripe`);
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    console.log(`

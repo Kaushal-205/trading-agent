@@ -30,7 +30,19 @@ interface UseOnrampReturn {
   cancelPurchase: () => void;
   handleSuccess: () => void;
   handleCancel: () => void;
-  proceedToCheckout: () => Promise<{ url: string; solAmount: number }>;
+  proceedToCheckout: (params?: { 
+    dollarAmount?: number; 
+    solAmount?: number;
+    tokenSymbol?: string;
+    tokenAddress?: string;
+    tokenAmount?: number;
+  }) => Promise<{
+    url: string;
+    solAmount: number;
+    fiatAmount: number;
+    fiatCurrency: string;
+    sessionId: string;
+  }>;
 }
 
 // const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
@@ -44,20 +56,68 @@ export function useOnramp(): UseOnrampReturn {
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
 
   // Helper function to directly create a Stripe checkout session
-  const proceedToCheckout = async () => {
+  const proceedToCheckout = async (params?: { 
+    dollarAmount?: number; 
+    solAmount?: number;
+    tokenSymbol?: string;
+    tokenAddress?: string;
+    tokenAmount?: number;
+  }) => {
     try {
+      // Check for either Solana wallet adapter or Privy wallet
+      const userWalletAddress = publicKey?.toString() || walletAddress;
+
+      if (!userWalletAddress) {
+        throw new Error('Please connect your wallet first');
+      }
+      
+      const body: any = {
+        walletAddress: userWalletAddress,
+        email: undefined,
+        country: undefined,
+      };
+
+      // Pass through all parameters if provided
+      if (params?.dollarAmount !== undefined && typeof params.dollarAmount === 'number' && params.dollarAmount > 0) {
+        body.dollarAmount = params.dollarAmount;
+      }
+      
+      if (params?.solAmount !== undefined && typeof params.solAmount === 'number' && params.solAmount > 0) {
+        body.solAmount = params.solAmount;
+      }
+      
+      // Add token parameters if provided
+      if (params?.tokenSymbol) {
+        body.tokenSymbol = params.tokenSymbol;
+      }
+      
+      if (params?.tokenAddress) {
+        body.tokenAddress = params.tokenAddress;
+      }
+      
+      if (params?.tokenAmount && params.tokenAmount > 0) {
+        body.tokenAmount = params.tokenAmount;
+      }
+
+      console.log('Creating checkout session with parameters:', body);
+      
       const response = await fetch(`${config.apiUrl}/api/create-checkout-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          walletAddress: walletAddress,
-          email: undefined,
-          country: undefined
-        }),
+        body: JSON.stringify(body),
       });
 
       const data = await response.json();
+      
       if (data.error) throw new Error(data.error);
+      
+      console.log('Checkout session created:', {
+        solAmount: data.solAmount,
+        fiatAmount: data.fiatAmount,
+        fiatCurrency: data.fiatCurrency,
+        isTokenSwap: data.isTokenSwap,
+        tokenSymbol: data.tokenSymbol
+      });
 
       // Open Stripe checkout in new window
       window.open(data.url, '_blank');
@@ -68,7 +128,7 @@ export function useOnramp(): UseOnrampReturn {
     }
   };
 
-  // Create a mock quote just for display purposes
+  // Create a quote for the specified amount
   const getQuote = async (amount: number) => {
     // Check for either Solana wallet adapter or Privy wallet
     const userAddress = publicKey?.toString() || walletAddress;
@@ -87,12 +147,26 @@ export function useOnramp(): UseOnrampReturn {
     setError(null);
 
     try {
-      // Create a fixed mock quote without any API calls
+      // Create a dynamic quote based on the specified amount
+      const response = await fetch(`${config.apiUrl}/api/create-checkout-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: userAddress,
+          dollarAmount: amount
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.error) throw new Error(data.error);
+      
+      // Create a quote from the response
       const quote: OnrampQuote = {
         provider: "Stripe",
-        inputAmount: 1, // $1 USD
-        inputCurrency: 'USD',
-        outputAmount: 0.1, // 0.1 SOL
+        inputAmount: data.fiatAmount,
+        inputCurrency: data.fiatCurrency.toUpperCase(),
+        outputAmount: data.solAmount,
         outputCurrency: 'SOL',
         fees: {
           provider: 0,
@@ -100,9 +174,9 @@ export function useOnramp(): UseOnrampReturn {
           total: 0
         },
         estimatedProcessingTime: "1-2 minutes",
-        exchangeRate: 10, // 1 SOL = 10 USD
-        network: 'devnet',
-        redirectUrl: '' // Will be populated when confirmPurchase is called
+        exchangeRate: data.fiatAmount / data.solAmount,
+        network: 'mainnet',
+        redirectUrl: data.url
       };
 
       console.log('Created quote:', quote);
@@ -117,7 +191,15 @@ export function useOnramp(): UseOnrampReturn {
 
   const confirmPurchase = async () => {
     if (currentQuote) {
-      await proceedToCheckout();
+      const purchaseParams = {
+        dollarAmount: currentQuote.inputAmount,
+      };
+      
+      try {
+        await proceedToCheckout(purchaseParams);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Failed to process payment');
+      }
     }
   };
 

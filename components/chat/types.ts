@@ -19,6 +19,8 @@ export interface LLMResponse {
   currency?: string;
   token?: string;
   message: string;
+  dollarAmount?: number;
+  solAmount?: number;
 }
 
 export interface OnrampQuote {
