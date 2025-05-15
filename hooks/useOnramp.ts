@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { usePrivyAuth } from '@/components/privy/privy-auth-provider';
 import axios from 'axios';
+import config from '@/lib/config';
 
 interface OnrampQuote {
   provider: string;
@@ -32,7 +33,7 @@ interface UseOnrampReturn {
   proceedToCheckout: () => Promise<void>;
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+// const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
 
 export function useOnramp(): UseOnrampReturn {
   const { publicKey } = useWallet();
@@ -46,7 +47,7 @@ export function useOnramp(): UseOnrampReturn {
   const proceedToCheckout = async () => {
     // Check for either Solana wallet adapter or Privy wallet
     const userAddress = publicKey?.toString() || walletAddress;
-    
+
     if (!userAddress) {
       setError('Please connect your wallet first');
       return;
@@ -57,13 +58,13 @@ export function useOnramp(): UseOnrampReturn {
 
     try {
       console.log('Creating Stripe checkout session...');
-      
+
       // Create Stripe checkout session via backend
-      const response = await axios.post(`${BACKEND_URL}/api/create-checkout-session`, {
+      const response = await axios.post(`${config.apiUrl}/api/create-checkout-session`, {
         walletAddress: userAddress,
         email: undefined
       });
-      
+
       if (!response.data?.url) {
         throw new Error('Invalid response from server');
       }
@@ -82,7 +83,7 @@ export function useOnramp(): UseOnrampReturn {
   const getQuote = async (amount: number) => {
     // Check for either Solana wallet adapter or Privy wallet
     const userAddress = publicKey?.toString() || walletAddress;
-    
+
     if (!userAddress) {
       setError('Please connect your wallet first');
       return;
