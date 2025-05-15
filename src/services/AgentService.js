@@ -40,18 +40,6 @@ class AgentService {
         symbol: 'TRUMP',
         name: 'Trump'
       },
-      'WALLET': {
-        address: 'bVfhihtqyopGwZTMYZRm14NW9ZveFQkxWBeoEFPLv9h',
-        decimals: 9,
-        symbol: 'WALLET',
-        name: 'Wallet'
-      },
-      'FAME': {
-        address: '4pqFVT2emoqUPH76Nf9TSRxRce7EZCMaMzt4RX3Y3Hz5',
-        decimals: 9,
-        symbol: 'FAME',
-        name: 'Fame'
-      }
 
     };
   }
@@ -83,11 +71,6 @@ class AgentService {
         // TRUMP and variations
         'TRUMP': 'TRUMP',
 
-        // WALLET and variations
-        'WALLET': 'WALLET',
-
-        // FAME and variations
-        'FAME': 'FAME'
       };
 
       // Check if we have a direct mapping

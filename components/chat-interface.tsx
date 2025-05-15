@@ -282,7 +282,7 @@ export default function ChatInterface() {
             
             // Fetch balance directly from Solana cluster
             try {
-              const connection = new Connection(clusterApiUrl('devnet'));
+              const connection = new Connection(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://api.mainnet-beta.solana.com');
               const balance = await connection.getBalance(new PublicKey(targetWalletAddress));
               const solBalance = balance / 1000000000; // Convert lamports to SOL
               
@@ -393,7 +393,7 @@ export default function ChatInterface() {
             
             // Fetch balance directly from Solana cluster
             try {
-              const connection = new Connection(clusterApiUrl('devnet'));
+              const connection = new Connection(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://api.mainnet-beta.solana.com');
               const balance = await connection.getBalance(new PublicKey(targetWalletAddress));
               const solBalance = balance / 1000000000; // Convert lamports to SOL
               
@@ -489,7 +489,7 @@ export default function ChatInterface() {
             
             // Fetch balance directly from Solana cluster
             try {
-              const connection = new Connection(clusterApiUrl('devnet'));
+              const connection = new Connection(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://api.mainnet-beta.solana.com');
               const balance = await connection.getBalance(new PublicKey(targetWalletAddress));
               const solBalance = balance / 1000000000; // Convert lamports to SOL
               
@@ -622,17 +622,18 @@ export default function ChatInterface() {
       const loadingMsgId = generateMessageId();
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `Opening payment page to purchase 0.1 SOL on Solana Devnet...`,
+        content: `Getting current SOL price and preparing payment...`,
         messageId: loadingMsgId
       }]);
 
       // Skip quote fetching and directly proceed to checkout
-      await proceedToCheckout();
+      const response = await proceedToCheckout();
+      const solAmount = response.solAmount;
 
       // Update the loading message with success message
       setMessages(prev => prev.map(msg =>
         msg.messageId === loadingMsgId
-          ? { ...msg, content: `Opening Stripe payment page. Please complete your purchase there. You'll receive 0.1 SOL on Solana Devnet after the payment is processed, and your payment will be automatically refunded.` }
+          ? { ...msg, content: `Opening Stripe payment page. Please complete your purchase there. You'll receive ${solAmount.toFixed(4)} SOL on Solana Mainnet after the payment is processed.` }
           : msg
       ));
     } catch (error) {
@@ -786,8 +787,7 @@ export default function ChatInterface() {
           const txSignature = result.signature;
           setMessages(prev => prev.map(msg =>
             msg.messageId === processingMsgId
-              // ? { ...msg, content: `Swap successful! [View transaction](https://explorer.solana.com/tx/${txSignature}?cluster=devnet)` }
-              ? { ...msg, content: `Swap successful! [View transaction](https://solscan.io/tx/${txSignature}?cluster=devnet)` }
+              ? { ...msg, content: `Swap successful! [View transaction](https://solscan.io/tx/${txSignature})` }
               : msg
           ));
 
@@ -846,10 +846,11 @@ export default function ChatInterface() {
 
   const handleConfirmPurchase = async () => {
     try {
-      await proceedToCheckout();
+      const response = await proceedToCheckout();
+      const solAmount = response.solAmount;
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Opening Stripe payment page. Please complete your purchase there. You'll receive 0.1 SOL on Solana Devnet after the payment is processed, and your payment will be automatically refunded.",
+        content: `Opening Stripe payment page. Please complete your purchase there. You'll receive ${solAmount.toFixed(4)} SOL on Solana Mainnet after the payment is processed.`,
         messageId: generateMessageId()
       }]);
     } catch (error) {
@@ -964,7 +965,7 @@ export default function ChatInterface() {
         msg.messageId === lendingMsgId
           ? { 
               ...msg, 
-              content: `Successfully lent ${lendingAmount} ${lendingToken?.symbol} on Solend! [View transaction](https://solscan.io/tx/${signature}?cluster=devnet). You are now earning ${selectedPool.apy}% APY.` 
+              content: `Successfully lent ${lendingAmount} ${lendingToken?.symbol} on Solend! [View transaction](https://solscan.io/tx/${signature}). You are now earning ${selectedPool.apy}% APY.` 
             }
           : msg
       ));

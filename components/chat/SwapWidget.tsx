@@ -38,7 +38,7 @@ export function SwapWidget({ quote, onConfirm, onCancel, isProcessing = false }:
         </div>
         <div className="flex justify-between">
           <span className="text-gray-800 font-medium">Network:</span>
-          <span className="text-black">Solana Devnet</span>
+          <span className="text-black">Solana Mainnet</span>
         </div>
       </div>
 

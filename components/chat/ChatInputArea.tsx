@@ -36,9 +36,9 @@ export function ChatInputArea({
         <Button
           variant="outline"
           className="bg-white text-black hover:bg-gray-100 border-input"
-          onClick={() => onQuickAction("Buy 10 FAME")}
+          onClick={() => onQuickAction("Buy 1 USDC")}
         >
-          Buy FAME token
+          Buy USDC token
         </Button>
         <Button
           variant="outline"

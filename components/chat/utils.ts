@@ -31,8 +31,8 @@ export function generateMessageId(): string {
 }
 
 export function getAlchemyConnection(): Connection {
-    // We'll default to devnet for now
-    return new Connection(clusterApiUrl('devnet'));
+    // Use mainnet with Alchemy RPC
+    return new Connection(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://api.mainnet-beta.solana.com');
   }
 
 // Improved helper to extract token symbol from user input for yield intent

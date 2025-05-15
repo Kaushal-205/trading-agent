@@ -26,11 +26,11 @@ interface UseOnrampReturn {
   currentQuote: OnrampQuote | null;
   error: string | null;
   getQuote: (amount: number) => Promise<void>;
-  confirmPurchase: () => void;
+  confirmPurchase: () => Promise<void>;
   cancelPurchase: () => void;
   handleSuccess: () => void;
   handleCancel: () => void;
-  proceedToCheckout: () => Promise<void>;
+  proceedToCheckout: () => Promise<{ url: string; solAmount: number }>;
 }
 
 // const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
@@ -45,37 +45,26 @@ export function useOnramp(): UseOnrampReturn {
 
   // Helper function to directly create a Stripe checkout session
   const proceedToCheckout = async () => {
-    // Check for either Solana wallet adapter or Privy wallet
-    const userAddress = publicKey?.toString() || walletAddress;
-
-    if (!userAddress) {
-      setError('Please connect your wallet first');
-      return;
-    }
-
-    setIsProcessing(true);
-    setError(null);
-
     try {
-      console.log('Creating Stripe checkout session...');
-
-      // Create Stripe checkout session via backend
-      const response = await axios.post(`${config.apiUrl}/api/create-checkout-session`, {
-        walletAddress: userAddress,
-        email: undefined
+      const response = await fetch(`${config.apiUrl}/api/create-checkout-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: walletAddress,
+          email: undefined,
+          country: undefined
+        }),
       });
 
-      if (!response.data?.url) {
-        throw new Error('Invalid response from server');
-      }
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
 
-      // Open the Stripe checkout in a new window
-      window.open(response.data.url, '_blank');
+      // Open Stripe checkout in new window
+      window.open(data.url, '_blank');
+      return data;
     } catch (error) {
-      console.error('Error creating checkout session:', error);
-      setError(error instanceof Error ? error.message : 'Failed to create checkout session');
-    } finally {
-      setIsProcessing(false);
+      console.error('Error in proceedToCheckout:', error);
+      throw error;
     }
   };
 
@@ -126,8 +115,10 @@ export function useOnramp(): UseOnrampReturn {
     }
   };
 
-  const confirmPurchase = () => {
-    proceedToCheckout(); // Directly proceed to checkout instead of using the quote URL
+  const confirmPurchase = async () => {
+    if (currentQuote) {
+      await proceedToCheckout();
+    }
   };
 
   const cancelPurchase = () => {

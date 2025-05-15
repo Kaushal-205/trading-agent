@@ -26,7 +26,7 @@ app.use(express.json({
 // New dependencies for Stripe and Solana funding
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY_LIVE);
 
-// Load the funding wallet (devnet) from env.
+// Load the funding wallet (mainnet) from env.
 const FUNDING_SECRET = process.env.FUNDING_WALLET_SECRET;
 console.log("FUNDING_SECRET", FUNDING_SECRET);
 let fundingKeypair = null;
@@ -41,6 +41,21 @@ try {
   }
 } catch (error) {
   console.error("Error initializing funding wallet:", error);
+}
+
+// Function to get current SOL price
+async function getCurrentSolPrice() {
+  try {
+    const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd,inr');
+    const data = await response.json();
+    return {
+      usd: data.solana.usd,
+      inr: data.solana.inr
+    };
+  } catch (error) {
+    console.error('Error fetching SOL price:', error);
+    return null;
+  }
 }
 
 // Default prices (if not defined in .env)
@@ -62,7 +77,7 @@ app.post('/api/solend-lend', async (req, res) => {
     if (!userPublicKey || typeof userPublicKey !== 'string') return res.status(400).json({ error: 'Missing or invalid userPublicKey' });
     // if (!reserve.liquidity || typeof reserve.liquidity.mintDecimals !== 'number') return res.status(400).json({ error: 'Missing reserve.liquidity.mintDecimals' });
 
-    const connection = new Connection(clusterApiUrl('devnet'));
+    const connection = new Connection(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://api.mainnet-beta.solana.com');
     const decimals = new BN(pool.reserve.liquidity.mintDecimals);
     const amountBN = new BN(amount).mul(new BN(10).pow(decimals));
     const wallet = { publicKey: new PublicKey(userPublicKey) };
@@ -158,6 +173,18 @@ app.post('/api/create-checkout-session', async (req, res) => {
       amount = PRICE_INR; // ₹100 INR (in paisa)
     }
 
+    // Get current SOL price
+    const solPrice = await getCurrentSolPrice();
+    if (!solPrice) {
+      return res.status(500).json({ error: 'Unable to fetch current SOL price' });
+    }
+
+    // Calculate SOL amount based on payment amount
+    const paymentAmount = amount / 100; // Convert cents/paisa to dollars/rupees
+    const solAmount = currency === 'usd' 
+      ? paymentAmount / solPrice.usd
+      : paymentAmount / solPrice.inr;
+
     // Validate amount is a positive number
     if (typeof amount !== 'number' || amount <= 0) {
       return res.status(500).json({ error: 'Invalid price configuration' });
@@ -179,8 +206,8 @@ app.post('/api/create-checkout-session', async (req, res) => {
           price_data: {
             currency: currency,
             product_data: {
-              name: 'Solana Devnet Top-up (0.1 SOL)',
-              description: 'Adds 0.1 SOL to your Solana wallet on Devnet. Payment will be refunded after successful transfer.'
+              name: `Solana Mainnet Top-up (${solAmount.toFixed(4)} SOL)`,
+              description: `Adds ${solAmount.toFixed(4)} SOL to your Solana wallet on Mainnet.`
             },
             unit_amount: amount,
           },
@@ -189,8 +216,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
       ],
       metadata: {
         walletAddress,
-        solAmount: SOL_AMOUNT.toString(),
-        refundRequired: 'true' // Flag to indicate refund is required after SOL transfer
+        solAmount: solAmount.toString(),
       },
       success_url: `${backendUrl}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${frontendUrl}/payment-cancelled`,
@@ -205,10 +231,10 @@ app.post('/api/create-checkout-session', async (req, res) => {
       currency: session.currency,
       status: 'created',
       timestamp: new Date().toISOString(),
-      solAmount: SOL_AMOUNT
+      solAmount: solAmount
     });
 
-    res.json({ url: session.url });
+    res.json({ url: session.url, solAmount });
   } catch (e) {
     console.error('Stripe session error:', e);
     // Don't expose internal error details to client
@@ -296,7 +322,7 @@ app.post('/stripe/webhook', async (req, res) => {
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
       const walletAddress = session.metadata?.walletAddress;
-      const refundRequired = session.metadata?.refundRequired === 'true';
+      // const refundRequired = session.metadata?.refundRequired === 'true';
       const paymentIntentId = session.payment_intent;
       
       console.log(`Processing payment for session ${session.id}, wallet: ${walletAddress}`);
@@ -324,7 +350,7 @@ app.post('/stripe/webhook', async (req, res) => {
         }
 
         // Process SOL transfer asynchronously (don't wait in webhook response)
-        processSolTransfer(session.id, walletAddress, paymentIntentId, refundRequired)
+        processSolTransfer(session.id, walletAddress, paymentIntentId, false) // Pass false for refundRequired
           .catch(error => {
             console.error(`Async error processing SOL transfer for session ${session.id}:`, error);
           });
@@ -426,7 +452,7 @@ app.post('/api/transfer-sol', async (req, res) => {
     }
     
     // Connect to Solana
-    const connection = new Connection(clusterApiUrl('devnet'));
+    const connection = new Connection(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://api.mainnet-beta.solana.com');
     
     // Verify the recipient wallet address
     let recipientPubkey;
@@ -462,7 +488,7 @@ app.post('/api/transfer-sol', async (req, res) => {
     console.log(`SOL transfer successful! Transaction signature: ${signature}`);
     
     // Create explorer link
-    const explorerLink = `https://solscan.io/tx/${signature}?cluster=devnet`;
+    const explorerLink = `https://solscan.io/tx/${signature}`;
     
     return res.status(200).json({
       status: 'success',
@@ -499,7 +525,7 @@ async function processSolTransfer(sessionId, walletAddress, paymentIntentId, ref
   
   try {
     // Connect to Solana
-    const connection = new Connection(clusterApiUrl('devnet'));
+    const connection = new Connection(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://api.mainnet-beta.solana.com');
     
     // Verify the recipient wallet address
     let recipientPubkey;
@@ -532,7 +558,7 @@ async function processSolTransfer(sessionId, walletAddress, paymentIntentId, ref
     console.log(`SOL transfer successful! Transaction signature: ${signature}`);
     
     // Create explorer link
-    const explorerLink = `https://solscan.io/tx/${signature}?cluster=devnet`;
+    const explorerLink = `https://solscan.io/tx/${signature}`;
     
     // Update session status
     if (paymentSessions.has(sessionId)) {
@@ -550,15 +576,15 @@ async function processSolTransfer(sessionId, walletAddress, paymentIntentId, ref
         console.log(`Initiating refund for payment ${paymentIntentId}`);
         const refund = await stripe.refunds.create({
           payment_intent: paymentIntentId,
-          reason: 'requested_by_customer',
+          // reason: 'requested_by_customer', // We are no longer refunding
         });
         
         // Update session with refund info
         if (paymentSessions.has(sessionId)) {
           const session = paymentSessions.get(sessionId);
-          session.status = 'refunded';
-          session.refundId = refund.id;
-          session.refundTimestamp = new Date().toISOString();
+          session.status = 'sol_transferred'; // Status remains sol_transferred, not refunded
+          // session.refundId = refund.id; // No refund ID
+          // session.refundTimestamp = new Date().toISOString(); // No refund timestamp
         }
         
         console.log(`Refund successfully processed: ${refund.id}`);
@@ -568,7 +594,7 @@ async function processSolTransfer(sessionId, walletAddress, paymentIntentId, ref
         // Still mark session with error but keep SOL transfer data
         if (paymentSessions.has(sessionId)) {
           const session = paymentSessions.get(sessionId);
-          session.refundError = refundError.message;
+          // session.refundError = refundError.message; // No refund error
         }
       }
     }
@@ -597,8 +623,8 @@ function getStatusMessage(sessionData) {
       return 'Payment received. Sending SOL to your wallet...';
     case 'sol_transferred':
       return `SOL successfully sent to your wallet! View the transaction on Solana Explorer: ${sessionData.explorerLink}`;
-    case 'refunded':
-      return 'Transaction complete! Your payment has been refunded.';
+    // case 'refunded':
+    //   return 'Transaction complete! Your payment has been refunded.';
     case 'error':
       return `There was an error: ${sessionData.error}`;
     default:

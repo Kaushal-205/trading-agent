@@ -16,6 +16,9 @@ import Decimal from 'decimal.js';
 // For devnet RPC endpoint
 const DEVNET_RPC_ENDPOINT = 'https://api.devnet.solana.com';
 
+// For mainnet RPC endpoint
+const connection = new Connection(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+
 // Helper function to format token amounts
 function formatTokenAmount(amount: BN, decimals: number): string {
   return new Decimal(amount.toString()).div(new Decimal(10).pow(decimals)).toString();
@@ -295,7 +298,7 @@ export function useRaydium(): UseRaydiumReturn {
       const raydium = await Raydium.load({
         owner: userPublicKey,
         connection: conn,
-        cluster: 'devnet',
+        cluster: 'mainnet-beta',
         disableFeatureCheck: true,
         disableLoadToken: true,
       });

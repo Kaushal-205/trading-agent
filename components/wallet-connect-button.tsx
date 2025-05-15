@@ -88,7 +88,7 @@ export function WalletConnectButton() {
         {walletAddress && (
           <DropdownMenuItem
             onClick={() =>
-              window.open(`https://solscan.io/address/${walletAddress}?cluster=devnet`, "_blank")
+              window.open(`https://solscan.io/address/${walletAddress}`, "_blank")
             }
           >
             <ExternalLink className="mr-2 h-4 w-4" />

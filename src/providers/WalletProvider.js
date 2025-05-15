@@ -12,14 +12,14 @@ require('@solana/wallet-adapter-react-ui/styles.css');
 
 // Public RPC endpoints
 const RPC_ENDPOINTS = {
-  [WalletAdapterNetwork.Mainnet]: 'https://api.mainnet-beta.solana.com',
+  [WalletAdapterNetwork.Mainnet]: process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://api.mainnet-beta.solana.com',
   [WalletAdapterNetwork.Devnet]: 'https://api.devnet.solana.com',
   [WalletAdapterNetwork.Testnet]: 'https://api.testnet.solana.com',
 };
 
 export default function SolanaWalletProvider({ children }) {
-  // Default to devnet for development
-  const [network, setNetwork] = useState(WalletAdapterNetwork.Devnet);
+  // Default to mainnet for production
+  const [network, setNetwork] = useState(WalletAdapterNetwork.Mainnet);
 
   // Use the public RPC endpoint
   const endpoint = useMemo(() => RPC_ENDPOINTS[network], [network]);

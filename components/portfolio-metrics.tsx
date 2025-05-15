@@ -28,10 +28,10 @@ export function PortfolioMetrics() {
         setError(null)
         
         // Get real data using clusterAPI
-        const rpcEndpoints = [
-          clusterApiUrl('devnet'), // Primary devnet endpoint
-          "https://api.devnet.solana.com", // Backup devnet endpoint
-          "https://devnet.solana.rpcpool.com" // Another devnet backup
+        const endpoints = [
+          process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://api.mainnet-beta.solana.com', // Primary endpoint (Alchemy if available)
+          'https://api.mainnet-beta.solana.com', // Backup mainnet endpoint
+          'https://mainnet.solana.rpcpool.com' // Another mainnet backup
         ];
         
         let connection;
@@ -39,7 +39,7 @@ export function PortfolioMetrics() {
         let success = false;
         
         // Try each endpoint until one works
-        for (const endpoint of rpcEndpoints) {
+        for (const endpoint of endpoints) {
           try {
             connection = new Connection(endpoint, 'confirmed');
             balance = await connection.getBalance(new PublicKey(walletAddress));
