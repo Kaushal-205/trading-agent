@@ -24,7 +24,7 @@ app.use(express.json({
 }));
 
 // New dependencies for Stripe and Solana funding
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY_LIVE);
 
 // Load the funding wallet (devnet) from env.
 const FUNDING_SECRET = process.env.FUNDING_WALLET_SECRET;
@@ -132,8 +132,20 @@ app.get('/api/health', (req, res) => {
 app.post('/api/create-checkout-session', async (req, res) => {
   try {
     const { walletAddress, email, country } = req.body;
+    
+    // Validate required fields
     if (!walletAddress || typeof walletAddress !== 'string') {
-      return res.status(400).json({ error: 'Missing walletAddress' });
+      return res.status(400).json({ error: 'Missing or invalid walletAddress' });
+    }
+
+    // Validate email format if provided
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    // Validate country code
+    if (country && typeof country !== 'string' || (country && country.length !== 2)) {
+      return res.status(400).json({ error: 'Invalid country code' });
     }
 
     // Determine currency and price based on country (default to USD)
@@ -144,6 +156,19 @@ app.post('/api/create-checkout-session', async (req, res) => {
     if (country === 'IN') {
       currency = 'inr';
       amount = PRICE_INR; // ₹100 INR (in paisa)
+    }
+
+    // Validate amount is a positive number
+    if (typeof amount !== 'number' || amount <= 0) {
+      return res.status(500).json({ error: 'Invalid price configuration' });
+    }
+
+    // Validate URLs
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:4000';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    
+    if (!backendUrl || !frontendUrl) {
+      return res.status(500).json({ error: 'Missing required URL configuration' });
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -167,8 +192,8 @@ app.post('/api/create-checkout-session', async (req, res) => {
         solAmount: SOL_AMOUNT.toString(),
         refundRequired: 'true' // Flag to indicate refund is required after SOL transfer
       },
-      success_url: `${process.env.BACKEND_URL || 'http://localhost:4000'}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment-cancelled`,
+      success_url: `${backendUrl}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${frontendUrl}/payment-cancelled`,
       customer_email: email || undefined,
     });
 
@@ -186,6 +211,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
     res.json({ url: session.url });
   } catch (e) {
     console.error('Stripe session error:', e);
+    // Don't expose internal error details to client
     res.status(500).json({ error: 'Could not create checkout session' });
   }
 });
@@ -254,7 +280,7 @@ app.get('/payment-success', (req, res) => {
 // === 2. Stripe Webhook to fund wallet and initiate refund ===
 app.post('/stripe/webhook', async (req, res) => {
   const sig = req.headers['stripe-signature'];
-  const endpointSecret = process.env.STRIPE_SECRET_KEY;
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET_LIVE;
 
   let event;
   try {
